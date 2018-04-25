@@ -63,8 +63,63 @@ click_time_tr[2]-click_time_te[1]
 ```{r}
 tr <- partition(train %>% arrange(click_time), ip, cluster=cluster)
 ```
+```{r}
+tr %>% mutate(click_dt=fasttime::fastPOSIXct(click_time), att_dt=fasttime::fastPOSIXct(attributed_time)) %>% 
+  mutate(diff=att_dt-click_dt)  -> tr_time 
+  # %>% select(-attributed_time, -click_time )
+  # group_by(ip, device, os) %>% 
+  # mutate(diff_ip_device_os=click_dt-lag(click_dt), cum_att_ip_device_os=cumsum(is_attributed)/1:n() ) %>% 
+  # mutate(cum_diff_ip_device_os=cumsum(diff_ip_device_os)/1:n()) %>% 
+  # group_by(ip, device) %>% 
+  # mutate(diff_ip_device=click_dt-lag(click_dt), cum_att_ip_device=cumsum(is_attributed)/1:n() ) %>% 
+  # group_by(ip, os) %>% 
+  # mutate(diff_ip_os=click_dt-lag(click_dt), cum_att_ip_os=cumsum(is_attributed)/1:n() ) %>% 
+  # group_by(ip) %>% 
+  # mutate(diff_ip=click_dt-lag(click_dt), cum_att_ip=cumsum(is_attributed)/1:n() ) %>% 
+  # group_by(device) %>% 
+  # mutate(diff_device=click_dt-lag(click_dt), cum_att_device=cumsum(is_attributed)/1:n() ) %>% 
+  # group_by(os) %>% 
+  # mutate(diff_os=click_dt-lag(click_dt), cum_att_os=cumsum(is_attributed)/1:n() )  
+
+#tr_time %>% filter(!is.na(diff_ip_device_os)) %>% head(100)
+```
+
+```{r}
+ggplot(tr_time %>% collect()) +
+  geom_histogram(aes(x=diff/60), binwidth = 2) 
+```
+
+```{r}
+#tr_time %>% partition(ip) -> tr_time_ip
+
+tr_time %>% collect() -> tr_time_df
+
+tr_time_df %>% 
+  inner_join(tr_time_df %>% 
+               select(ip, is_attributed, click_dt, att_dt, app, os, device, channel) %>% 
+               filter(is_attributed==1) %>% 
+               collect(), by="ip") %>% 
+  filter( ( click_dt.y <= click_dt.x & click_dt.x <= att_dt.y ) | ( click_dt.x <= click_dt.y ) ) %>% 
+  group_by(ip, click_dt.y) %>%  
+  mutate(n_att=cumsum(is_attributed.x)) %>% 
+  filter(max(n_att)-n_att<2 ) %>% # & click_dt.x!=click_dt.y
+  ungroup() -> tr_join
+
+tr_join %>% 
+  group_by(ip, click_dt.y) %>% 
+  summarise(n=n(), att=sum(is_attributed.x), max_dt=max(click_dt.x)-min(click_dt.y), min_dt=min(click_dt.x)-min(click_dt.y)) %>% 
+  arrange(-n)  
+
+```
+
+```{r}
+tr_join %>% 
+  arrange(ip, click_dt.x, click_dt.y) %>%  
+  select(ip, is_attributed.x, click_dt.y, click_dt.x, att_dt.y, att_dt.y, app.x, app.y, os.x, os.y, device.x, device.y, channel.x, channel.y)
+```
 
 
+## Feature Engineering
 
 ```{r}
 tr %>% 
@@ -79,42 +134,15 @@ tr %>%
   group_by(device) %>% 
   summarise(diff_device=click_dt-lag(click_dt), cum_att_device=cumsum(is_attributed) ) %>% 
   group_by(os) %>% 
-  summarise(diff_os=click_dt-lag(click_dt), cum_att_os=cumsum(is_attributed) )  -> tr_time
-```
-
-
-```{r}
-tr %>% mutate(click_dt=fasttime::fastPOSIXct(click_time), att_dt=fasttime::fastPOSIXct(attributed_time)) %>% 
-  mutate(diff=att_dt-click_dt) %>% select(-attributed_time, -click_time )  %>%
-  group_by(ip, device, os) %>% 
-  mutate(diff_ip_device_os=click_dt-lag(click_dt), cum_att_ip_device_os=cumsum(is_attributed)/1:n() ) %>% 
-  mutate(cum_diff_ip_device_os=cumsum(diff_ip_device_os)/1:n()) %>% 
-  group_by(ip, device) %>% 
-  mutate(diff_ip_device=click_dt-lag(click_dt), cum_att_ip_device=cumsum(is_attributed)/1:n() ) %>% 
-  group_by(ip, os) %>% 
-  mutate(diff_ip_os=click_dt-lag(click_dt), cum_att_ip_os=cumsum(is_attributed)/1:n() ) %>% 
-  group_by(ip) %>% 
-  mutate(diff_ip=click_dt-lag(click_dt), cum_att_ip=cumsum(is_attributed)/1:n() ) %>% 
-  group_by(device) %>% 
-  mutate(diff_device=click_dt-lag(click_dt), cum_att_device=cumsum(is_attributed)/1:n() ) %>% 
-  group_by(os) %>% 
-  mutate(diff_os=click_dt-lag(click_dt), cum_att_os=cumsum(is_attributed)/1:n() )  -> tr_time
-
-tr_time %>% filter(!is.na(diff_ip_device_os)) %>% head(100)
-```
-
-```{r}
-ggplot(tr_time %>% collect()) +
-  geom_histogram(aes(x=diff/60), binwidth = 2) 
+  summarise(diff_os=click_dt-lag(click_dt), cum_att_os=cumsum(is_attributed) )  -> tr_sum
 ```
 
 ```{r}
 range(train$click_time)
 ```
 
-
 ```{r}
-table(train %>% pull(is_attributed))
+table(train$is_attributed)
 ```
 
 
