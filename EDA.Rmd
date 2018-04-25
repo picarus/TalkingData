@@ -1,0 +1,120 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+library(pacman)
+p_load(ggplot2) # Data visualization
+p_load(readr) # CSV file I/O, e.g. the read_csv function
+p_load(dplyr)
+library(multidplyr)
+p_load(parallel)
+p_load(fasttime)
+p_load(xgboost)
+
+# Input data files are available in the "../input/" directory.
+# For example, running this (by clicking run or pressing Shift+Enter) will list the files in the input directory
+#devtools::install_github("hadley/multidplyr")
+```
+
+```{r}
+print(n_cores<-detectCores()-1)
+cluster <- create_cluster(n_cores)
+print(cluster)
+set_default_cluster(cluster)
+```
+
+
+```{r}
+train <- read_csv("train_sample.csv", progress=T)
+train %>% nrow()
+```
+
+```{r}
+train %>% colnames()
+
+```
+
+
+```{r}
+test <- read_csv("test.csv", progress=F)
+test %>% nrow()
+```
+
+```{r}
+click_time_tr <- range(train$click_time)
+click_time_tr
+```
+
+```{r}
+click_time_te <- range(test$click_time)
+click_time_te
+```
+
+```{r}
+click_time_te[2]-click_time_te[1]
+```
+
+```{r}
+click_time_tr[2]-click_time_te[1]
+```
+
+```{r}
+tr <- partition(train %>% arrange(click_time), ip, cluster=cluster)
+```
+
+
+
+```{r}
+tr %>% 
+  group_by(ip, device, os) %>% 
+  summarise(diff_ip_device_os=click_dt-lag(click_dt), cum_att_ip_device_os=cumsum(is_attributed) ) %>% 
+  group_by(ip, device) %>% 
+  summarise(diff_ip_device=click_dt-lag(click_dt), cum_att_ip_device=cumsum(is_attributed) ) %>% 
+  group_by(ip, os) %>% 
+  summarise(diff_ip_os=click_dt-lag(click_dt), cum_att_ip_os=cumsum(is_attributed) ) %>% 
+  group_by(ip) %>% 
+  summarise(diff_ip=click_dt-lag(click_dt), cum_att_ip=cumsum(is_attributed) ) %>% 
+  group_by(device) %>% 
+  summarise(diff_device=click_dt-lag(click_dt), cum_att_device=cumsum(is_attributed) ) %>% 
+  group_by(os) %>% 
+  summarise(diff_os=click_dt-lag(click_dt), cum_att_os=cumsum(is_attributed) )  -> tr_time
+```
+
+
+```{r}
+tr %>% mutate(click_dt=fasttime::fastPOSIXct(click_time), att_dt=fasttime::fastPOSIXct(attributed_time)) %>% 
+  mutate(diff=att_dt-click_dt) %>% select(-attributed_time, -click_time )  %>%
+  group_by(ip, device, os) %>% 
+  mutate(diff_ip_device_os=click_dt-lag(click_dt), cum_att_ip_device_os=cumsum(is_attributed)/1:n() ) %>% 
+  mutate(cum_diff_ip_device_os=cumsum(diff_ip_device_os)/1:n()) %>% 
+  group_by(ip, device) %>% 
+  mutate(diff_ip_device=click_dt-lag(click_dt), cum_att_ip_device=cumsum(is_attributed)/1:n() ) %>% 
+  group_by(ip, os) %>% 
+  mutate(diff_ip_os=click_dt-lag(click_dt), cum_att_ip_os=cumsum(is_attributed)/1:n() ) %>% 
+  group_by(ip) %>% 
+  mutate(diff_ip=click_dt-lag(click_dt), cum_att_ip=cumsum(is_attributed)/1:n() ) %>% 
+  group_by(device) %>% 
+  mutate(diff_device=click_dt-lag(click_dt), cum_att_device=cumsum(is_attributed)/1:n() ) %>% 
+  group_by(os) %>% 
+  mutate(diff_os=click_dt-lag(click_dt), cum_att_os=cumsum(is_attributed)/1:n() )  -> tr_time
+
+tr_time %>% filter(!is.na(diff_ip_device_os)) %>% head(100)
+```
+
+```{r}
+ggplot(tr_time %>% collect()) +
+  geom_histogram(aes(x=diff/60), binwidth = 2) 
+```
+
+```{r}
+range(train$click_time)
+```
+
+
+```{r}
+table(train %>% pull(is_attributed))
+```
+
+
