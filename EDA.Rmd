@@ -12,11 +12,18 @@ library(multidplyr)
 p_load(parallel)
 p_load(fasttime)
 p_load(xgboost)
+p_load(parallel)
+p_load(magrittr)
 
 # Input data files are available in the "../input/" directory.
 # For example, running this (by clicking run or pressing Shift+Enter) will list the files in the input directory
 #devtools::install_github("hadley/multidplyr")
 ```
+
+```{r}
+source("kaggleUtils.R")
+```
+
 
 ```{r}
 print(n_cores<-detectCores()-1)
@@ -25,22 +32,50 @@ print(cluster)
 set_default_cluster(cluster)
 ```
 
+```{r}
+
+myfilename <- "train.csv"
+rdsFile <- paste0(myfilename,".RDS")
+  
+if ( file.exists(rdsFile) ) {
+  load(rdsFile, envir=.Glo)
+} else {
+  train <- read_csv(myfilename, progress=T)
+  save(train, file = rdsFile)
+} 
+
+nr <- train %>% nrow()
+nr
+```
 
 ```{r}
-train <- read_csv("train_sample.csv", progress=T)
-train %>% nrow()
+train %>% head(100)
 ```
 
 ```{r}
 train %>% colnames()
-
 ```
 
 
 ```{r}
-test <- read_csv("test.csv", progress=F)
-test %>% nrow()
+rngIp <- range(train$ip)
+rngIp
+thrIp <- round(rngIp[2]/4) # 25%
+thrIp
 ```
+
+
+
+
+```{r}
+tb <- table(train$is_attributed)
+tb
+```
+
+```{r}
+tb / nr
+```
+
 
 ```{r}
 click_time_tr <- range(train$click_time)
@@ -48,9 +83,56 @@ click_time_tr
 ```
 
 ```{r}
+train %<>% filter(ip<thrIp)
+```
+
+```{r}
+tb <- table(train$is_attributed)
+tb
+```
+
+```{r}
+nrs <- nrow(train)
+nrs
+tb / nrs
+```
+
+```{r}
+tr <- partition(train, ip, cluster=cluster)
+```
+
+```{r}
+rm(train)
+```
+
+## TEST
+
+```{r}
+
+myfilename <- "test.csv"
+rdsFile <- paste0(myfilename,".RDS")
+  
+if ( file.exists(rdsFile) ) {
+  load(rdsFile)
+} else {
+  test <- read_csv(myfilename, progress=T)
+  save(test, file = rdsFile)
+} 
+
+
+nr <- test %>% nrow()
+```
+
+```{r}
+test %>% colnames()
+```
+
+
+```{r}
 click_time_te <- range(test$click_time)
 click_time_te
 ```
+
 
 ```{r}
 click_time_te[2]-click_time_te[1]
@@ -60,12 +142,10 @@ click_time_te[2]-click_time_te[1]
 click_time_tr[2]-click_time_te[1]
 ```
 
+
 ```{r}
-tr <- partition(train %>% arrange(click_time), ip, cluster=cluster)
-```
-```{r}
-tr %>% mutate(click_dt=fasttime::fastPOSIXct(click_time), att_dt=fasttime::fastPOSIXct(attributed_time)) %>% 
-  mutate(diff=att_dt-click_dt)  -> tr_time 
+
+tr %<>%   mutate(diff=attributed_time-click_time) 
   # %>% select(-attributed_time, -click_time )
   # group_by(ip, device, os) %>% 
   # mutate(diff_ip_device_os=click_dt-lag(click_dt), cum_att_ip_device_os=cumsum(is_attributed)/1:n() ) %>% 
@@ -85,29 +165,40 @@ tr %>% mutate(click_dt=fasttime::fastPOSIXct(click_time), att_dt=fasttime::fastP
 ```
 
 ```{r}
-ggplot(tr_time %>% collect()) +
-  geom_histogram(aes(x=diff/60), binwidth = 2) 
+ggplot(tr %>% filter(is_attributed==1) %>% collect()) +
+  geom_histogram(aes(x=diff), binwidth = 600)  + scale_y_log10() + scale_x_time()
+```
+
+
+
+```{r}
+
+tr %>%
+  group_by(ip) %>% 
+  filter( sum(is_attributed) > 1 ) %>% 
+  collect() -> trx_df
+
+tr_df %>% 
+  filter( is_attributed == 1 ) %>% 
+  select(-diff) %>% 
+  collect() -> try_df
+
+trx_df %>% 
+  inner_join(try_df, by="ip") %>% 
+  filter( ( click_time.y < click_time.x & click_time.x <= attributed_time.y ) ) %>% 
+  group_by(ip, click_time.y) %>%  
+  mutate(n_att=cumsum(is_attributed.x)) %>% 
+ # filter(max(n_att)-n_att<2 ) %>% # & click_dt.x!=click_dt.y
+  ungroup() -> tr_join
+
+tr_join %>% head(100)
+
 ```
 
 ```{r}
-#tr_time %>% partition(ip) -> tr_time_ip
-
-tr_time %>% collect() -> tr_time_df
-
-tr_time_df %>% 
-  inner_join(tr_time_df %>% 
-               select(ip, is_attributed, click_dt, att_dt, app, os, device, channel) %>% 
-               filter(is_attributed==1) %>% 
-               collect(), by="ip") %>% 
-  filter( ( click_dt.y <= click_dt.x & click_dt.x <= att_dt.y ) | ( click_dt.x <= click_dt.y ) ) %>% 
-  group_by(ip, click_dt.y) %>%  
-  mutate(n_att=cumsum(is_attributed.x)) %>% 
-  filter(max(n_att)-n_att<2 ) %>% # & click_dt.x!=click_dt.y
-  ungroup() -> tr_join
-
 tr_join %>% 
-  group_by(ip, click_dt.y) %>% 
-  summarise(n=n(), att=sum(is_attributed.x), max_dt=max(click_dt.x)-min(click_dt.y), min_dt=min(click_dt.x)-min(click_dt.y)) %>% 
+  group_by(ip, click_time.y) %>% 
+  summarise(n=n(), att=sum(is_attributed.x), max_dt=max(click_time.x)-min(click_time.y), min_dt=min(click_time.x)-min(click_time.y)) %>% 
   arrange(-n)  
 
 ```
