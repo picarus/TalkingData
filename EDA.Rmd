@@ -56,6 +56,32 @@ train %>% head(100)
 train %>% colnames()
 ```
 
+```{r}
+train %>% distinct(ip) -> train_ip
+train %>% distinct(app) -> train_app
+train %>% distinct(os) -> train_os
+train %>% distinct(channel) -> train_channel
+```
+
+```{r}
+train %>% 
+  group_by(ip, app, os, channel) %>% 
+  filter(n()>1) %>% 
+  summarize(n=n(),a=sum(is_attributed)) %>% 
+  mutate(pct=a/n) -> train_distinct_all
+train_distinct_all %>% nrow()
+train_distinct_all %>% arrange(-pct,-n) %>% head(100)
+```
+
+```{r}
+train_distinct_all %>% arrange(-n,-pct) %>% head(100)
+```
+
+```{r}
+ggplot(train_distinct_all)+
+   geom_points(aes(x=n(),y=pct()) 
+```
+
 
 ```{r}
 rngIp <- range(train$ip)
@@ -127,6 +153,19 @@ nr <- test %>% nrow()
 test %>% colnames()
 ```
 
+```{r}
+test %>% distinct(ip) %>% nrow()-> test_ip_n
+test %>% distinct(app) %>% nrow() -> test_ip_n
+test %>% distinct(os) %>% nrow() -> test_os_n
+test %>% distinct(channel) %>% nrow() -> test_channel_n
+```
+
+```{r}
+test %>% anti_join(train_ip, by="ip") -> test_ip_not
+test %>% anti_join(train_app, by="app") -> test_app_not
+test %>% anti_join(train_channel, by="channel") -> test_channel_not
+test %>% anti_join(train_os, by="os") -> test_os_not
+```
 
 ```{r}
 click_time_te <- range(test$click_time)
