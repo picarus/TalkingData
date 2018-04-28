@@ -1,0 +1,94 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+load("test_supplement.csv.RDS")
+load("test.csv.RDS")
+```
+
+```{r}
+range(test$click_time)
+range(test_sup$click_time)
+```
+
+```{r}
+test_sup %>% 
+  anti_join(test, by=c("ip", "app", "device", "os", "channel", "click_time")) -> test_sup_new
+nrow(test_sup_new)
+```
+
+```{r}
+test_sup %>% 
+  semi_join(test, by=c("ip", "app", "device", "os", "channel", "click_time")) -> test_2
+nrow(test_2)
+
+```
+
+```{r}
+nrow(test)
+nrow(test_sup_new) + nrow(test)
+nrow(test_sup)
+```
+
+```{r}
+rm(test_sup)
+
+test %<>% mutate(day=format(click_time,"%d"), hour=format(click_time, "%H")) 
+
+test_sup_new %<>% mutate(day=format(click_time,"%d"), hour=format(click_time, "%H")) 
+
+test_sup_train <- test_sup_new %>% filter(day<10) 
+
+test_sup_new %>% 
+  filter(day>=10) %>% 
+  mutate(pred=F) %>% 
+  rbind(test %>% mutate(pred=T)) -> test_sup_test 
+
+rm(test_sup_new)
+
+save(test_sup_train, file="test_sup_train.Rds")
+save(test_sup_test, file="test.Rds")
+```
+
+```{r}
+test_sup %>% group_by(day, hour) %>% summarise(n=n()) 
+```
+
+```{r}
+load("distincts.RDS")
+```
+
+```{r}
+
+source("utils_EDA.R")
+
+test_diff(test_sup_test, train_distincts)
+
+```
+
+```{r}
+test_diff(test, train_distincts)
+```
+
+```{r}
+test_train_distincts <- calc_diff(test_sup_train) 
+
+combine_distincts <- function(l1, l2){
+  
+  l1 %>% rbind(l2) %>% distinct()
+  
+}
+
+both_distincts <- list(app=combine_distincts(train_distincts$app, test_train_distincts$app),
+                       os=combine_distincts(train_distincts$os, test_train_distincts$os),
+                       channel=combine_distincts(train_distincts$channel, test_train_distincts$channel))
+
+test_diff(test, both_distincts)
+```
+
+```{r}
+test_diff(test_sup_test, both_distincts)
+```
+

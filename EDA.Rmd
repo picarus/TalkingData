@@ -21,7 +21,7 @@ p_load(magrittr)
 ```
 
 ```{r}
-source("kaggleUtils.R")
+source("utils_EDA.R")
 ```
 
 
@@ -32,13 +32,14 @@ print(cluster)
 set_default_cluster(cluster)
 ```
 
+
 ```{r}
 
 myfilename <- "train.csv"
 rdsFile <- paste0(myfilename,".RDS")
   
 if ( file.exists(rdsFile) ) {
-  load(rdsFile, envir=.Glo)
+  load(rdsFile, envir=.GlobalEnv)
 } else {
   train <- read_csv(myfilename, progress=T)
   save(train, file = rdsFile)
@@ -46,6 +47,10 @@ if ( file.exists(rdsFile) ) {
 
 nr <- train %>% nrow()
 nr
+```
+
+```{r}
+train %<>% mutate(id=1:n(), day=format(click_time,"%d") )
 ```
 
 ```{r}
@@ -57,71 +62,47 @@ train %>% colnames()
 ```
 
 ```{r}
-train %>% distinct(ip) -> train_ip
-train %>% distinct(app) -> train_app
-train %>% distinct(os) -> train_os
-train %>% distinct(channel) -> train_channel
-```
-
-```{r}
-train %>% 
-  group_by(ip, app, os, channel) %>% 
-  filter(n()>1) %>% 
-  summarize(n=n(),a=sum(is_attributed)) %>% 
-  mutate(pct=a/n) -> train_distinct_all
-train_distinct_all %>% nrow()
-train_distinct_all %>% arrange(-pct,-n) %>% head(100)
-```
-
-```{r}
-train_distinct_all %>% arrange(-n,-pct) %>% head(100)
-```
-
-```{r}
-ggplot(train_distinct_all)+
-   geom_points(aes(x=n(),y=pct()) 
-```
-
-
-```{r}
-rngIp <- range(train$ip)
-rngIp
-thrIp <- round(rngIp[2]/4) # 25%
-thrIp
-```
-
-
-
-
-```{r}
-tb <- table(train$is_attributed)
-tb
-```
-
-```{r}
-tb / nr
-```
-
-
-```{r}
 click_time_tr <- range(train$click_time)
 click_time_tr
 ```
 
 ```{r}
-train %<>% filter(ip<thrIp)
+train_distincts <- calc_diff(train)
+
+#train_distincts <- list(app=train_app, os=train_os, channel=train_channel)
+
+save(train_distincts, file="distincts.RDS")
 ```
 
 ```{r}
-tb <- table(train$is_attributed)
-tb
+train %>% 
+  distinct(ip, day) %>% 
+  nrow()
 ```
 
 ```{r}
-nrs <- nrow(train)
-nrs
-tb / nrs
+train %>% 
+  filter(is_attributed==1) %>% 
+  distinct(ip, day) %>% 
+  nrow()
 ```
+
+
+# SLICE BY 4 (optionally)
+
+```{r}
+rngIp <- range(train$ip)
+rngIp
+
+thrIp <- round(rngIp[2]/4) # 25%
+thrIp
+```
+
+```{r}
+#train %<>% filter(ip<thrIp)
+```
+
+# PARTITION
 
 ```{r}
 tr <- partition(train, ip, cluster=cluster)
@@ -129,6 +110,26 @@ tr <- partition(train, ip, cluster=cluster)
 
 ```{r}
 rm(train)
+```
+
+```{r}
+tr %>% 
+  group_by(ip, is_attributed) %>% 
+  summarise(n=n()) %>% 
+  collect() %>% 
+  ungroup() -> tb
+
+tb %>% 
+  group_by(is_attributed, add=F) %>% 
+  mutate(n=sum(n)) %>%    
+  mutate(pct=n/nr) %>% 
+  select(-ip) %>% 
+  head(2)
+
+```
+
+```{r}
+tr %<>% mutate(day=format(click_time,"%d"))
 ```
 
 ## TEST
@@ -145,8 +146,7 @@ if ( file.exists(rdsFile) ) {
   save(test, file = rdsFile)
 } 
 
-
-nr <- test %>% nrow()
+nr_test <- test %>% nrow()
 ```
 
 ```{r}
@@ -154,24 +154,15 @@ test %>% colnames()
 ```
 
 ```{r}
-test %>% distinct(ip) %>% nrow()-> test_ip_n
-test %>% distinct(app) %>% nrow() -> test_ip_n
-test %>% distinct(os) %>% nrow() -> test_os_n
-test %>% distinct(channel) %>% nrow() -> test_channel_n
+test_diff(test)
 ```
 
-```{r}
-test %>% anti_join(train_ip, by="ip") -> test_ip_not
-test %>% anti_join(train_app, by="app") -> test_app_not
-test %>% anti_join(train_channel, by="channel") -> test_channel_not
-test %>% anti_join(train_os, by="os") -> test_os_not
-```
+
 
 ```{r}
 click_time_te <- range(test$click_time)
 click_time_te
 ```
-
 
 ```{r}
 click_time_te[2]-click_time_te[1]
@@ -182,25 +173,82 @@ click_time_tr[2]-click_time_te[1]
 ```
 
 
+# more on train
+
+```{r}
+
+tr %>% 
+  calculateDistinct() %>% 
+  collect() -> train_distinct_all
+
+train_distinct_all %<>% mutate(pct=a/n, pct_inv=n/a, a_zero=a==0)  
+
+train_distinct_all %>% nrow()
+
+train_distinct_all %>% arrange(-pct,-n) %>% head(100)
+```
+
+```{r}
+train_distinct_all %>% arrange(-n,-pct) %>% head(100)
+```
+
+```{r}
+ggplot(train_distinct_all)+
+  geom_point(aes(x=n,y=pct, color=a_zero )) +
+  facet_wrap(~day) + 
+  scale_x_log10()
+```
+
+```{r}
+ggplot(train_distinct_all)+
+  geom_point(aes(x=n,y=pct_inv, color=a_zero )) + 
+  facet_wrap(~day+a_zero, ncol=4) + 
+  scale_x_log10() +
+  scale_y_log10()
+```
+
+```{r}
+ggplot(train_distinct_all) +
+  geom_histogram(aes(x=n, fill=day), position = "dodge") + scale_x_log10()
+```
+
+
+```{r}
+test_sup_train %>% 
+  mutate(is_attributed = NA) %>% 
+  calculateDistinct() -> test_distinct_all
+
+train_distinct_all %>% 
+  rbind(test_distinct_all) %>% 
+  group_by(ip, day) %>% 
+  summarize(n=sum(n)) -> distinct_all
+
+```
+
+```{r}
+ggplot(distinct_all) +
+  geom_histogram(aes(x=n, fill=day), position = "dodge") + scale_x_log10()
+```
+
+```{r}
+ggplot(distinct_all %>% filter(day!="06")) +
+  geom_histogram(aes(x=n, fill=day), position = "dodge") + 
+  scale_x_log10()
+```
+
+
+```{r}
+distinct_all %>% group_by(day,n) %>% summarise(nn=n()) %>% mutate(nn=ifelse(day==6, nn*12/5, nn)) -> distinct_all_n
+
+ggplot(distinct_all_n) +
+  geom_bar(aes(x=n, y=nn, fill=day), position = "dodge", stat="identity") + 
+  scale_x_log10()
+```
+
 ```{r}
 
 tr %<>%   mutate(diff=attributed_time-click_time) 
-  # %>% select(-attributed_time, -click_time )
-  # group_by(ip, device, os) %>% 
-  # mutate(diff_ip_device_os=click_dt-lag(click_dt), cum_att_ip_device_os=cumsum(is_attributed)/1:n() ) %>% 
-  # mutate(cum_diff_ip_device_os=cumsum(diff_ip_device_os)/1:n()) %>% 
-  # group_by(ip, device) %>% 
-  # mutate(diff_ip_device=click_dt-lag(click_dt), cum_att_ip_device=cumsum(is_attributed)/1:n() ) %>% 
-  # group_by(ip, os) %>% 
-  # mutate(diff_ip_os=click_dt-lag(click_dt), cum_att_ip_os=cumsum(is_attributed)/1:n() ) %>% 
-  # group_by(ip) %>% 
-  # mutate(diff_ip=click_dt-lag(click_dt), cum_att_ip=cumsum(is_attributed)/1:n() ) %>% 
-  # group_by(device) %>% 
-  # mutate(diff_device=click_dt-lag(click_dt), cum_att_device=cumsum(is_attributed)/1:n() ) %>% 
-  # group_by(os) %>% 
-  # mutate(diff_os=click_dt-lag(click_dt), cum_att_os=cumsum(is_attributed)/1:n() )  
 
-#tr_time %>% filter(!is.na(diff_ip_device_os)) %>% head(100)
 ```
 
 ```{r}
@@ -209,11 +257,23 @@ ggplot(tr %>% filter(is_attributed==1) %>% collect()) +
 ```
 
 
+```{r}
+
+train %>% filter(is_attributed==1) %>%   mutate(diff=attributed_time-click_time) -> train_pos
+
+```
+
+```{r}
+ggplot(train, )
+```
+
+
+# plot diff vs N and pct
 
 ```{r}
 
 tr %>%
-  group_by(ip) %>% 
+  group_by(ip, day) %>% 
   filter( sum(is_attributed) > 1 ) %>% 
   collect() -> trx_df
 
@@ -223,7 +283,7 @@ tr_df %>%
   collect() -> try_df
 
 trx_df %>% 
-  inner_join(try_df, by="ip") %>% 
+  inner_join(try_df, by=c("ip","day")) %>% 
   filter( ( click_time.y < click_time.x & click_time.x <= attributed_time.y ) ) %>% 
   group_by(ip, click_time.y) %>%  
   mutate(n_att=cumsum(is_attributed.x)) %>% 
@@ -246,33 +306,6 @@ tr_join %>%
 tr_join %>% 
   arrange(ip, click_dt.x, click_dt.y) %>%  
   select(ip, is_attributed.x, click_dt.y, click_dt.x, att_dt.y, att_dt.y, app.x, app.y, os.x, os.y, device.x, device.y, channel.x, channel.y)
-```
-
-
-## Feature Engineering
-
-```{r}
-tr %>% 
-  group_by(ip, device, os) %>% 
-  summarise(diff_ip_device_os=click_dt-lag(click_dt), cum_att_ip_device_os=cumsum(is_attributed) ) %>% 
-  group_by(ip, device) %>% 
-  summarise(diff_ip_device=click_dt-lag(click_dt), cum_att_ip_device=cumsum(is_attributed) ) %>% 
-  group_by(ip, os) %>% 
-  summarise(diff_ip_os=click_dt-lag(click_dt), cum_att_ip_os=cumsum(is_attributed) ) %>% 
-  group_by(ip) %>% 
-  summarise(diff_ip=click_dt-lag(click_dt), cum_att_ip=cumsum(is_attributed) ) %>% 
-  group_by(device) %>% 
-  summarise(diff_device=click_dt-lag(click_dt), cum_att_device=cumsum(is_attributed) ) %>% 
-  group_by(os) %>% 
-  summarise(diff_os=click_dt-lag(click_dt), cum_att_os=cumsum(is_attributed) )  -> tr_sum
-```
-
-```{r}
-range(train$click_time)
-```
-
-```{r}
-table(train$is_attributed)
 ```
 
 

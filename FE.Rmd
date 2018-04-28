@@ -1,0 +1,231 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+
+
+```{r}
+library(pacman)
+p_load(ggplot2) # Data visualization
+p_load(readr) # CSV file I/O, e.g. the read_csv function
+p_load(dplyr)
+library(multidplyr)
+p_load(parallel)
+p_load(fasttime)
+p_load(xgboost)
+p_load(parallel)
+p_load(magrittr)
+
+# Input data files are available in the "../input/" directory.
+# For example, running this (by clicking run or pressing Shift+Enter) will list the files in the input directory
+#devtools::install_github("hadley/multidplyr")
+```
+
+```{r}
+source("utils_EDA.R")
+```
+
+# Load Data
+
+```{r}
+
+load("train.csv.RDS")
+#load("test_sup_train.Rds")
+
+```
+
+# join the two datasets
+
+# Feature Engineering
+
+TODO: window of 1hr, 4hr, 12hr, ...
+
+```{r}
+train %<>% mutate(id=1:n(), day=format(click_time,"%d"), hour=format(click_time,"%H") )
+
+train %>% head(100)
+```
+
+```{r}
+train %>% 
+  group_by(device) %>%
+  mutate(diff_device=as.numeric(click_time-lag(click_time)), 
+         pct_att_device=cumsum(is_attributed)/1:n(), 
+         cps_diff_device = as.numeric(click_time-click_time[1])/1:n() ) %>%
+  ungroup() %>%
+  group_by(os) %>%
+  mutate(diff_os=as.numeric(click_time-lag(click_time)), 
+         pct_att_os=cumsum(is_attributed)/1:n(), 
+         cps_os = as.numeric(click_time-click_time[1])/1:n() ) %>% 
+  ungroup() %>% 
+  group_by(device,os) %>%
+  mutate(diff_device_os=as.numeric(click_time-lag(click_time)), 
+         pct_att_device_os=cumsum(is_attributed)/1:n(), 
+         cps_diff_device_os = as.numeric(click_time-click_time[1])/1:n() ) %>%
+  ungroup() %>% 
+  group_by(channel) %>% 
+  mutate(diff_channel=as.numeric(click_time-lag(click_time)), 
+         pct_att_channel=cumsum(is_attributed)/1:n(), 
+         cps_diff_channel = as.numeric(click_time-click_time[1])/1:n() ) %>% 
+  ungroup() %>% 
+  group_by(channel,device,os) %>%
+  mutate(diff_channel_device_os=as.numeric(click_time-lag(click_time)), 
+         pct_att_channel_device_os=cumsum(is_attributed)/1:n(), 
+         cps_diff_channel_device_os = as.numeric(click_time-click_time[1])/1:n() ) %>%
+  ungroup()  -> train_fe
+
+train_fe %>% head(100)
+
+```
+
+
+
+```{r}
+ggpplot(train_fe %>% filter(day==8 & hour==10)) %>% 
+  geom_line(aes(x=click_time, y=pct_att_channel, group=1)) +
+  geom_line(aes(x=click_time, y=pct_att_os, group=1)) +
+  geom_line(aes(x=click_time, y=pct_att_device, group=1)) +
+  geom_line(aes(x=click_time, y=pct_att_device_os, group=1)) +
+  geom_line(aes(x=click_time, y=pct_att_channel_device_os, group=1)) +
+  facet_wrap(~day, scale="free_x", ncol=2)
+  
+```
+
+```{r}
+ggpplot(train_fe %>% filter(day==8 & hour==10) ) %>% 
+  geom_line(aes(x=click_time, y=diff_channel, group=1)) +
+  geom_line(aes(x=click_time, y=diff_os, group=1)) +
+  geom_line(aes(x=click_time, y=diff_device, group=1)) +
+  geom_line(aes(x=click_time, y=diff_device_os, group=1)) +
+  geom_line(aes(x=click_time, y=diff_channel_device_os, group=1)) +
+  facet_wrap(~day, scale="free_x", ncol=2)
+  
+```
+
+```{r}
+ggpplot(train_fe %>% filter(day==8 & hour==10) ) %>% 
+  geom_line(aes(x=click_time, y=cps_diff_channel, group=1)) +
+  geom_line(aes(x=click_time, y=cps_diff_os, group=1)) +
+  geom_line(aes(x=click_time, y=cps_diff_device, group=1)) +
+  geom_line(aes(x=click_time, y=cps_diff_device_os, group=1)) +
+  geom_line(aes(x=click_time, y=cps_diff_channel_device_os, group=1)) +
+  facet_wrap(~day, scale="free_x", ncol=2)
+```
+
+```{r}
+save(train_fe, file="train_fe.RDS")
+#rm(train_fe)
+```
+
+
+```{r}
+# train %>% filter( ! is.na(diff_device) ) %>% filter( diff_device<0 ) %>% nrow()
+# train %>% filter( ! is.na(diff_os) ) %>% filter( diff_os<0 ) %>% nrow()
+# train %>% filter( ! is.na(diff_channel) ) %>% filter( diff_channel<0)  %>% nrow()
+```
+
+```{r}
+
+print(n_cores<-detectCores()-1)
+cluster <- create_cluster(n_cores)
+print(cluster)
+set_default_cluster(cluster)
+
+```
+
+
+```{r}
+tr <- partition(train, ip, cluster=cluster)
+
+rm(train); gc()
+#rm(test_sup_train)
+
+```
+
+```{r}
+
+tr %>% 
+  
+  group_by(ip, day, device, os, channel) %>%
+  mutate(diff_ip_device_os_channel = as.numeric(click_time-lag(click_time)), 
+         pct_att_ip_device_os_channel = cumsum(is_attributed)/1:n(),
+         cps_diff_ip_device_os_channel = as.numeric(click_time-click_time[1])/1:n()) %>% 
+  
+  group_by(ip, day, device, os) %>%
+  mutate(diff_ip_device_os = as.numeric(click_time-lag(click_time)), 
+         pct_att_ip_device_os = cumsum(is_attributed)/1:n(),
+         cps_diff_ip_device_os = as.numeric(click_time-click_time[1])/1:n()) %>% 
+  
+# -> tr_ip_day_device_os
+# tr_ip_day_device_os %>% head(100)
+# save(tr_ip_day_device_os, file="tr_ip_day_device_os.Rds")
+# tr_ip_day_device_os %>% 
+  
+  group_by(ip, day, device, add=F) %>%
+  mutate(diff_ip_device = as.numeric(click_time - lag(click_time)), 
+         pct_att_ip_device = cumsum(is_attributed)/1:n(), 
+         cps_diff_ip_device = as.numeric(click_time-click_time[1])/1:n()) %>%
+  
+  group_by(ip, day, os, add=F) %>%
+  mutate(diff_ip_os = as.numeric(click_time - lag(click_time)), 
+         pct_att_ip_os = cumsum(is_attributed)/1:n(),
+         cps_diff_ip_os = (click_time-click_time[1])/1:n()) %>%
+  
+  group_by(ip, day, add=F) %>%
+  mutate(diff_ip = as.numeric(click_time - lag(click_time)), 
+         pct_att_ip = cumsum(is_attributed)/1:n(),
+         cps_diff_ip = as.numeric(click_time-click_time[1])/1:n()) -> tr_ip
+  
+# tr_ip  %>% 
+#   group_by(day, device) %>%
+#   mutate(diff_device=click_dt-lag(click_dt), cum_att_device=cumsum(is_attributed)/1:n() ) %>%
+#   group_by(day, os) %>%
+#   mutate(diff_os=click_dt-lag(click_dt), cum_att_os=cumsum(is_attributed)/1:n() )
+
+```
+
+
+```{r}
+
+# Calculate, n clicks, n downloads, pct, pct_inv
+
+tr %>% 
+  group_by(ip, day, device, os) %>% 
+  summarise(diff_ip_device_os=click_dt-lag(click_dt), cum_att_ip_device_os=cumsum(is_attributed) ) -> tb_ip_device_os
+
+tr %>% 
+  group_by(ip, day,  device) %>% 
+  summarise(diff_ip_device=click_dt-lag(click_dt), cum_att_ip_device=cumsum(is_attributed) ) -> tb_ip_device
+  
+tr %>%   
+  group_by(ip, day, os) %>% 
+  summarise(diff_ip_os=click_dt-lag(click_dt), cum_att_ip_os=cumsum(is_attributed) ) -> tb_ip_os
+
+tr %>% 
+  group_by(ip, day) %>% 
+  summarise(diff_ip=click_dt-lag(click_dt), cum_att_ip=cumsum(is_attributed) ) -> tb_ip 
+  
+# tr %>%   
+#   group_by(device) %>% 
+#   summarise(diff_device=click_dt-lag(click_dt), cum_att_device=cumsum(is_attributed) ) -> tb_device
+#   
+# tr %>% 
+#   group_by(os) %>% 
+#   summarise(diff_os=click_dt-lag(click_dt), cum_att_os=cumsum(is_attributed) )  -> tb_os
+```
+
+```{r}
+range(train$click_time)
+```
+
+```{r}
+table(train$is_attributed)
+```
+
+```{r}
+ 
+
+#tr_time %>% filter(!is.na(diff_ip_device_os)) %>% head(100)
+```
+
