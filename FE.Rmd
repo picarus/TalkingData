@@ -39,7 +39,11 @@ load("train.csv.RDS")
 
 TODO: window of 1hr, 4hr, 12hr, ...
 TODO: add test_supp to train n calculations
+TODO: explore hour variability
+TODO: some features must be created on test directly (not copied from train data)
 TODO: deal with NA's, in test mainly
+TODO: increase training size
+TODO: add NB feature
 
 ```{r}
 train %<>% mutate(id=1:n(), day=format(click_time,"%d"), hour=as.numeric(format(click_time,"%H") ))

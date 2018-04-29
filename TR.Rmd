@@ -4,26 +4,24 @@ output: html_notebook
 ---
 
 ```{r}
-# library(pacman)
-# p_load(ggplot2) # Data visualization
-# p_load(readr) # CSV file I/O, e.g. the read_csv function
-# p_load(dplyr)
-# library(multidplyr)
-# p_load(parallel)
-# p_load(fasttime)
-# p_load(xgboost)
-# p_load(mlr)
-# p_load(mlrMBO)
-# p_load(caret)
-# p_load(magrittr)
-# p_load(parallelMap)
-# p_load(DiceKriging)
-# p_load(rgenoud)
+library(pacman)
+p_load(ggplot2) # Data visualization
+p_load(readr) # CSV file I/O, e.g. the read_csv function
+p_load(dplyr)
+# devtools::install_github("hadley/multidplyr")
+library(multidplyr)
+p_load(parallel)
+p_load(fasttime)
+p_load(xgboost)
+p_load(mlr)
+p_load(mlrMBO)
+p_load(caret)
+p_load(magrittr)
+p_load(parallelMap)
+p_load(DiceKriging)
+p_load(rgenoud)
 
 
-# Input data files are available in the "../input/" directory.
-# For example, running this (by clicking run or pressing Shift+Enter) will list the files in the input directory
-#devtools::install_github("hadley/multidplyr")
 ```
 
 
@@ -62,7 +60,7 @@ xgb_param <- makeParamSet(
 ```{r}
 # mlrMBO part
 mboControl <- makeMBOControl()
-mboControl <- setMBOControlTermination(mboControl, iters = 1)  # in addition to the initials
+mboControl <- setMBOControlTermination(mboControl, iters = 1, time.budget=18000)  # in addition to the initials
 mboControl <- setMBOControlInfill(mboControl, crit = makeMBOInfillCritAEI()) # augmented expected improvement
 # mlr part
 tuneMBOControl <- makeTuneControlMBO(mbo.control = mboControl)
@@ -101,6 +99,15 @@ trainTask <- makeClassifTask(data = train_cv %>% select(-wghts), target = "is_at
 
 
 ```{r}
+xgbSimple <- setHyperPars(xgb, par.vals = list(max_depth=5, eta=0.7, lambda=10^-0.5)) 
+
+xgb_model_simple <- train(xgbSimple, trainTask)
+
+save(xgb_model_simple, file="xgb_model_simple.RDS")
+```
+
+
+```{r}
 
 resTune <- tuneParams(learner=xgb, 
                 task=trainTask, 
@@ -109,13 +116,18 @@ resTune <- tuneParams(learner=xgb,
                 measures=auc, 
                 par.set = xgb_param, 
                 control = tuneMBOControl, 
-                show.info = F)
+                show.info = T)
 ```
 
 ```{r}
+
+save(resTune, file="xgb.tune.RDS")
+
 xgb_tuned_learner <- setHyperPars(learner = xgb, par.vals = resTune$x)
 
 xgb_model <- train(xgb_tuned_learner, trainTask)
+
+save(xgb_model, file="xgb_model.RDS")
 ```
 
 
