@@ -1,0 +1,203 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+
+```{r}
+library(pacman)
+p_load(ggplot2) # Data visualization
+p_load(readr) # CSV file I/O, e.g. the read_csv function
+p_load(dplyr)
+library(multidplyr)
+p_load(parallel)
+p_load(fasttime)
+p_load(xgboost)
+p_load(parallel)
+p_load(magrittr)
+p_load(caret)
+
+# Input data files are available in the "../input/" directory.
+# For example, running this (by clicking run or pressing Shift+Enter) will list the files in the input directory
+#devtools::install_github("hadley/multidplyr")
+```
+
+# Load Data
+
+```{r}
+load("train.csv.RDS")
+#load("test_sup_train.Rds")
+#train %<>% mutate(id=1:n(), day=format(click_time,"%d"), hour=format(click_time,"%H") )
+#save(train, file="train.csv.RDS")
+```
+
+# Subsampling
+
+
+```{r}
+train  %>% filter(is_attributed==1) %>% nrow() -> nr_pos
+nr_pos
+```
+
+
+```{r}
+train  %>% distinct(ip, day, device, os, channel) -> all_diff_df
+all_diff_df %>% nrow()
+```
+
+Total nr of keys
+
+```{r}
+train %>% filter(is_attributed==1) %>% distinct(ip, day, device, os, channel) -> pos_diff_df
+pos_diff_df %>% nrow()-> pos_keys_nr
+pos_keys_nr
+```
+
+Positive keys
+
+```{r}
+train %>% semi_join(pos_diff_df, by=c("ip","day","device","os","channel")) -> train_pos_df
+train_pos_df %>% nrow() -> pos_records_nr
+pos_records_nr
+```
+
+Positive rows
+
+```{r}
+all_diff_df %>% anti_join(pos_diff_df,by=c("ip","day","device","os","channel")) -> neg_diff_df
+neg_diff_df %>% nrow() -> neg_keys_nr
+neg_keys_nr
+```
+
+Keys to choose from
+
+```{r}
+nr <- nrow(train)
+nr
+```
+
+```{r}
+neg_keys_nr/pos_keys_nr
+```
+
+```{r}
+ratio <- round((nr - pos_records_nr)/pos_records_nr) + 1
+ratio
+```
+
+```{r}
+times <- 2
+pct <- 1/ratio * 2
+tr_pt <- sample(neg_keys_nr, size=neg_keys_nr * pct) %>% sort()
+tr_pt %>%  head(20)
+
+neg_keys_pt <- neg_diff_df[tr_pt,]
+neg_keys_pt %>% head(100)
+```
+
+```{r}
+
+train %>% semi_join(neg_keys_pt, by=c("ip","day","device","os","channel")) -> tr_neg
+
+train_pt <- rbind(tr_neg, train_pos_df)
+
+train_pt %<>% mutate( wghts = c(rep(1/pct,nrow(tr_neg)),rep(1,nrow(train_pos_df))))
+
+#rm(tr_neg, train_pos_df)
+```
+
+```{r}
+load("tr_sum_tables.RDS")
+```
+
+```{r}
+train_pt %<>% left_join(tr_app, by="app")
+train_pt %<>% left_join(tr_channel, by="channel") 
+train_pt %<>% left_join(tr_os, by="os") 
+train_pt %<>% left_join(tr_device, by="device") 
+train_pt %<>% left_join(tr_channel_device_os, by=c("device","channel","os")) 
+train_pt %<>% left_join(tr_device_app, by=c("device","app")) 
+train_pt %<>% left_join(tr_device_os, by=c("device","os")) 
+train_pt %>% head(100)
+```
+
+```{r}
+rm(tr_app, tr_channel, tr_os, tr_device, tr_channel_device_os, tr_device_app, tr_device_os)
+```
+
+```{r}
+load("tr_ip_sum_tables.RDS")
+```
+
+```{r}
+train_pt %<>% left_join(tb_ip, by=c("ip"))
+train_pt %<>% left_join(tb_ip_app, by=c("ip","app"))
+train_pt %<>% left_join(tb_ip_channel, by=c("ip","channel") )
+train_pt %<>% left_join(tb_ip_device, by=c("ip","device") )
+train_pt %<>% left_join(tb_ip_os, by=c("ip","os") )
+train_pt %>% head(100)
+```
+
+```{r}
+rm(tb_ip, tb_ip_app, tb_ip_channel, tb_ip_os, tb_ip_device)
+```
+
+
+```{r}
+load("tr_ip_sum_comb_tables.RDS")
+```
+
+```{r}
+train_pt %<>% left_join(tb_ip_app_channel, by=c("ip","app","channel"))
+train_pt %<>% left_join(tb_ip_channel_device, by=c("ip","channel","device") )
+train_pt %<>% left_join(tb_ip_device_os, by=c("ip","device","os") )
+train_pt %>% head(100)
+```
+```{r}
+rm(tb_ip_app_channel, tb_ip_channel_device, tb_ip_device_os)
+```
+
+
+```{r}
+load("tr_ip_sum_4_tables.RDS")
+```
+
+```{r}
+train_pt %<>% left_join(tb_ip_channel_device_os, by=c("ip","channel","device","os") )
+train_pt %>% head(100)
+```
+
+
+```{r}
+train_pt %<>% select(-day, -id, -attributed_time)
+train_pt %>% head(100)
+```
+
+
+```{r}
+
+train_pt %<>% mutate(hour=as.numeric(hour), ip:=as.numeric(ip), os=as.numeric(os), 
+                     channel=as.numeric(channel), device=as.numeric(device), app=as.numeric(app))
+train_pt %<>% mutate(n_app=as.numeric(n_app), n_channel=as.numeric(n_channel), n_os=as.numeric(n_os),
+                     diff_mean=as.numeric(diff_mean),
+                     n_device=as.numeric(n_device), n_device_os=as.numeric(n_device_os), 
+                     n_channel_device_os=as.numeric(n_channel_device_os))
+
+train_pt %<>% mutate(diff_mean=ifelse(is.nan(diff_mean),NA,diff_mean)) 
+```
+
+
+```{r}
+TR_TIME <- "2017-11-07 14:"
+VAL_TIME <- "2017-11-09 04:"
+
+train_pt %<>% mutate( wghts = c(rep(1/pct,nrow(tr_neg)),rep(1,nrow(train_pos_df))))
+
+train_cv <- train_pt %>% filter( TR_TIME <= click_time & click_time < VAL_TIME) %>% select(-click_time)
+valid_cv <- train_pt %>% filter( VAL_TIME <= click_time ) %>% select(-click_time)
+
+#rm(train_pt)
+```
+
+
+

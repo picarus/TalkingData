@@ -105,10 +105,6 @@ tr_pt <-createDataPartition(tr_neg$cth, times = times, p = pct, list=F)
 tr_pt %>%  head(20)
 ```
 
-```{r}
-#parallelGetRegisteredLevels()
-#parallelStart(mode="socket", cpus=n_cores) # one or all 
-```
 
 ```{r}
 params <- getParamSet("classif.xgboost")

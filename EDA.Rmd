@@ -246,9 +246,7 @@ ggplot(distinct_all_n) +
 ```
 
 ```{r}
-
 tr %<>%   mutate(diff=attributed_time-click_time) 
-
 ```
 
 ```{r}
@@ -256,15 +254,8 @@ ggplot(tr %>% filter(is_attributed==1) %>% collect()) +
   geom_histogram(aes(x=diff), binwidth = 600)  + scale_y_log10() + scale_x_time()
 ```
 
-
 ```{r}
-
 train %>% filter(is_attributed==1) %>%   mutate(diff=attributed_time-click_time) -> train_pos
-
-```
-
-```{r}
-ggplot(train, )
 ```
 
 

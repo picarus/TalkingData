@@ -1,0 +1,25 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+
+```{r}
+
+```
+
+
+```{r}
+testTask <- makeClassifTask(test_data, target = "is_attributed" )
+```
+
+
+```{r}
+# Make a new prediction
+result <- predict(xgb_model, testTask)
+prediction <- result$data %>% select(click_id = id, is_attributed = response) %>%
+  mutate(PassengerID = test_orig$PassengerId)
+
+write_csv(prediction, "final_prediction.csv")
+```
+
