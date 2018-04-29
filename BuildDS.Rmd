@@ -9,6 +9,7 @@ library(pacman)
 p_load(ggplot2) # Data visualization
 p_load(readr) # CSV file I/O, e.g. the read_csv function
 p_load(dplyr)
+#devtools::install_github("hadley/multidplyr")
 library(multidplyr)
 p_load(parallel)
 p_load(fasttime)
@@ -17,9 +18,8 @@ p_load(parallel)
 p_load(magrittr)
 p_load(caret)
 
-# Input data files are available in the "../input/" directory.
-# For example, running this (by clicking run or pressing Shift+Enter) will list the files in the input directory
-#devtools::install_github("hadley/multidplyr")
+source("utils_BuildDS.R")
+
 ```
 
 # Load Data
@@ -33,12 +33,10 @@ load("train.csv.RDS")
 
 # Subsampling
 
-
 ```{r}
 train  %>% filter(is_attributed==1) %>% nrow() -> nr_pos
 nr_pos
 ```
-
 
 ```{r}
 train  %>% distinct(ip, day, device, os, channel) -> all_diff_df
@@ -111,13 +109,7 @@ load("tr_sum_tables.RDS")
 ```
 
 ```{r}
-train_pt %<>% left_join(tr_app, by="app")
-train_pt %<>% left_join(tr_channel, by="channel") 
-train_pt %<>% left_join(tr_os, by="os") 
-train_pt %<>% left_join(tr_device, by="device") 
-train_pt %<>% left_join(tr_channel_device_os, by=c("device","channel","os")) 
-train_pt %<>% left_join(tr_device_app, by=c("device","app")) 
-train_pt %<>% left_join(tr_device_os, by=c("device","os")) 
+train_pt %<>% zero_set()
 train_pt %>% head(100)
 ```
 
@@ -130,11 +122,7 @@ load("tr_ip_sum_tables.RDS")
 ```
 
 ```{r}
-train_pt %<>% left_join(tb_ip, by=c("ip"))
-train_pt %<>% left_join(tb_ip_app, by=c("ip","app"))
-train_pt %<>% left_join(tb_ip_channel, by=c("ip","channel") )
-train_pt %<>% left_join(tb_ip_device, by=c("ip","device") )
-train_pt %<>% left_join(tb_ip_os, by=c("ip","os") )
+train_pt %<>% first_set()
 train_pt %>% head(100)
 ```
 
@@ -148,9 +136,7 @@ load("tr_ip_sum_comb_tables.RDS")
 ```
 
 ```{r}
-train_pt %<>% left_join(tb_ip_app_channel, by=c("ip","app","channel"))
-train_pt %<>% left_join(tb_ip_channel_device, by=c("ip","channel","device") )
-train_pt %<>% left_join(tb_ip_device_os, by=c("ip","device","os") )
+train_pt %<>% second_set()
 train_pt %>% head(100)
 ```
 ```{r}
@@ -163,29 +149,20 @@ load("tr_ip_sum_4_tables.RDS")
 ```
 
 ```{r}
-train_pt %<>% left_join(tb_ip_channel_device_os, by=c("ip","channel","device","os") )
+train_pt %<>% third_set()
 train_pt %>% head(100)
 ```
 
+```{r}
+
+train_pt %>% head(100)
+
+```
 
 ```{r}
+train_pt %<>% adjust_set()
 train_pt %<>% select(-day, -id, -attributed_time)
-train_pt %>% head(100)
 ```
-
-
-```{r}
-
-train_pt %<>% mutate(hour=as.numeric(hour), ip:=as.numeric(ip), os=as.numeric(os), 
-                     channel=as.numeric(channel), device=as.numeric(device), app=as.numeric(app))
-train_pt %<>% mutate(n_app=as.numeric(n_app), n_channel=as.numeric(n_channel), n_os=as.numeric(n_os),
-                     diff_mean=as.numeric(diff_mean),
-                     n_device=as.numeric(n_device), n_device_os=as.numeric(n_device_os), 
-                     n_channel_device_os=as.numeric(n_channel_device_os))
-
-train_pt %<>% mutate(diff_mean=ifelse(is.nan(diff_mean),NA,diff_mean)) 
-```
-
 
 ```{r}
 TR_TIME <- "2017-11-07 14:"
@@ -198,6 +175,3 @@ valid_cv <- train_pt %>% filter( VAL_TIME <= click_time ) %>% select(-click_time
 
 #rm(train_pt)
 ```
-
-
-

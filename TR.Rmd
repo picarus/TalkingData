@@ -96,8 +96,11 @@ xgb <- makeLearner( "classif.xgboost",
 ```
 
 ```{r}
-
 trainTask <- makeClassifTask(data = train_cv %>% select(-wghts), target = "is_attributed", positive = 1)
+```
+
+
+```{r}
 
 resTune <- tuneParams(learner=xgb, 
                 task=trainTask, 
@@ -109,16 +112,10 @@ resTune <- tuneParams(learner=xgb,
                 show.info = F)
 ```
 
-
-
 ```{r}
-xgb_tuned_learner <- setHyperPars(learner = xgb, par.vals = tuned_params$x)
-
-
+xgb_tuned_learner <- setHyperPars(learner = xgb, par.vals = resTune$x)
 
 xgb_model <- train(xgb_tuned_learner, trainTask)
-
-
 ```
 
 

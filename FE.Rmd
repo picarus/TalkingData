@@ -39,6 +39,7 @@ load("train.csv.RDS")
 
 TODO: window of 1hr, 4hr, 12hr, ...
 TODO: add test_supp to train n calculations
+TODO: deal with NA's, in test mainly
 
 ```{r}
 train %<>% mutate(id=1:n(), day=format(click_time,"%d"), hour=as.numeric(format(click_time,"%H") ))
