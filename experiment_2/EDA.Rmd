@@ -1,0 +1,302 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+library(pacman)
+p_load(ggplot2) # Data visualization
+p_load(readr) # CSV file I/O, e.g. the read_csv function
+p_load(dplyr)
+library(multidplyr)
+p_load(parallel)
+p_load(fasttime)
+p_load(xgboost)
+p_load(parallel)
+p_load(magrittr)
+
+# Input data files are available in the "../input/" directory.
+# For example, running this (by clicking run or pressing Shift+Enter) will list the files in the input directory
+#devtools::install_github("hadley/multidplyr")
+```
+
+```{r}
+source("utils_EDA.R")
+```
+
+
+```{r}
+print(n_cores<-detectCores()-1)
+cluster <- create_cluster(n_cores)
+print(cluster)
+set_default_cluster(cluster)
+```
+
+
+```{r}
+
+myfilename <- "train.csv"
+rdsFile <- paste0(myfilename,".RDS")
+  
+if ( file.exists(rdsFile) ) {
+  load(rdsFile, envir=.GlobalEnv)
+} else {
+  train <- read_csv(myfilename, progress=T)
+  save(train, file = rdsFile)
+} 
+
+nr <- train %>% nrow()
+nr
+```
+
+```{r}
+train %<>% mutate(id=1:n(), day=format(click_time,"%d") )
+```
+
+```{r}
+train %>% head(100)
+```
+
+```{r}
+train %>% colnames()
+```
+
+```{r}
+click_time_tr <- range(train$click_time)
+click_time_tr
+```
+
+```{r}
+train_distincts <- calc_diff(train)
+
+#train_distincts <- list(app=train_app, os=train_os, channel=train_channel)
+
+save(train_distincts, file="distincts.RDS")
+```
+
+```{r}
+train %>% 
+  distinct(ip, day) %>% 
+  nrow()
+```
+
+```{r}
+train %>% 
+  filter(is_attributed==1) %>% 
+  distinct(ip, day) %>% 
+  nrow()
+```
+
+
+# SLICE BY 4 (optionally)
+
+```{r}
+rngIp <- range(train$ip)
+rngIp
+
+thrIp <- round(rngIp[2]/4) # 25%
+thrIp
+```
+
+```{r}
+#train %<>% filter(ip<thrIp)
+```
+
+# PARTITION
+
+```{r}
+tr <- partition(train, ip, cluster=cluster)
+```
+
+```{r}
+rm(train)
+```
+
+```{r}
+tr %>% 
+  group_by(ip, is_attributed) %>% 
+  summarise(n=n()) %>% 
+  collect() %>% 
+  ungroup() -> tb
+
+tb %>% 
+  group_by(is_attributed, add=F) %>% 
+  mutate(n=sum(n)) %>%    
+  mutate(pct=n/nr) %>% 
+  select(-ip) %>% 
+  head(2)
+
+```
+
+```{r}
+tr %<>% mutate(day=format(click_time,"%d"))
+```
+
+## TEST
+
+```{r}
+
+myfilename <- "test.csv"
+rdsFile <- paste0(myfilename,".RDS")
+  
+if ( file.exists(rdsFile) ) {
+  load(rdsFile)
+} else {
+  test <- read_csv(myfilename, progress=T)
+  save(test, file = rdsFile)
+} 
+
+nr_test <- test %>% nrow()
+```
+
+```{r}
+test %>% colnames()
+```
+
+```{r}
+test_diff(test)
+```
+
+
+
+```{r}
+click_time_te <- range(test$click_time)
+click_time_te
+```
+
+```{r}
+click_time_te[2]-click_time_te[1]
+```
+
+```{r}
+click_time_tr[2]-click_time_te[1]
+```
+
+
+# more on train
+
+```{r}
+
+tr %>% 
+  calculateDistinct() %>% 
+  collect() -> train_distinct_all
+
+train_distinct_all %<>% mutate(pct=a/n, pct_inv=n/a, a_zero=a==0)  
+
+train_distinct_all %>% nrow()
+
+train_distinct_all %>% arrange(-pct,-n) %>% head(100)
+```
+
+```{r}
+train_distinct_all %>% arrange(-n,-pct) %>% head(100)
+```
+
+```{r}
+ggplot(train_distinct_all)+
+  geom_point(aes(x=n,y=pct, color=a_zero )) +
+  facet_wrap(~day) + 
+  scale_x_log10()
+```
+
+```{r}
+ggplot(train_distinct_all)+
+  geom_point(aes(x=n,y=pct_inv, color=a_zero )) + 
+  facet_wrap(~day+a_zero, ncol=4) + 
+  scale_x_log10() +
+  scale_y_log10()
+```
+
+```{r}
+ggplot(train_distinct_all) +
+  geom_histogram(aes(x=n, fill=day), position = "dodge") + scale_x_log10()
+```
+
+
+```{r}
+test_sup_train %>% 
+  mutate(is_attributed = NA) %>% 
+  calculateDistinct() -> test_distinct_all
+
+train_distinct_all %>% 
+  rbind(test_distinct_all) %>% 
+  group_by(ip, day) %>% 
+  summarize(n=sum(n)) -> distinct_all
+
+```
+
+```{r}
+ggplot(distinct_all) +
+  geom_histogram(aes(x=n, fill=day), position = "dodge") + scale_x_log10()
+```
+
+```{r}
+ggplot(distinct_all %>% filter(day!="06")) +
+  geom_histogram(aes(x=n, fill=day), position = "dodge") + 
+  scale_x_log10()
+```
+
+
+```{r}
+distinct_all %>% group_by(day,n) %>% summarise(nn=n()) %>% mutate(nn=ifelse(day==6, nn*12/5, nn)) -> distinct_all_n
+
+ggplot(distinct_all_n) +
+  geom_bar(aes(x=n, y=nn, fill=day), position = "dodge", stat="identity") + 
+  scale_x_log10()
+```
+
+```{r}
+tr %<>%   mutate(diff=attributed_time-click_time) 
+```
+
+```{r}
+ggplot(tr %>% filter(is_attributed==1) %>% collect()) +
+  geom_histogram(aes(x=diff), binwidth = 600)  + scale_y_log10() + scale_x_time()
+```
+
+```{r}
+train %>% filter(is_attributed==1) %>%   mutate(diff=attributed_time-click_time) -> train_pos
+```
+
+
+# plot diff vs N and pct
+
+```{r}
+
+tr %>%
+  group_by(ip, day) %>% 
+  filter( sum(is_attributed) > 1 ) %>% 
+  collect() -> trx_df
+
+tr_df %>% 
+  filter( is_attributed == 1 ) %>% 
+  select(-diff) %>% 
+  collect() -> try_df
+
+trx_df %>% 
+  inner_join(try_df, by=c("ip","day")) %>% 
+  filter( ( click_time.y < click_time.x & click_time.x <= attributed_time.y ) ) %>% 
+  group_by(ip, click_time.y) %>%  
+  mutate(n_att=cumsum(is_attributed.x)) %>% 
+ # filter(max(n_att)-n_att<2 ) %>% # & click_dt.x!=click_dt.y
+  ungroup() -> tr_join
+
+tr_join %>% head(100)
+
+```
+
+```{r}
+tr_join %>% 
+  group_by(ip, click_time.y) %>% 
+  summarise(n=n(), att=sum(is_attributed.x), max_dt=max(click_time.x)-min(click_time.y), min_dt=min(click_time.x)-min(click_time.y)) %>% 
+  arrange(-n)  
+
+```
+
+```{r}
+tr_join %>% 
+  arrange(ip, click_dt.x, click_dt.y) %>%  
+  select(ip, is_attributed.x, click_dt.y, click_dt.x, att_dt.y, att_dt.y, app.x, app.y, os.x, os.y, device.x, device.y, channel.x, channel.y)
+```
+
+
