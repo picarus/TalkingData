@@ -23,18 +23,15 @@ p_load(rgenoud)
 
 ```
 
-
 ```{r}
 source("utils_BuildDS.R")
 ```
-
 
 ```{r}
 load("test.csv.RDS")
 load("xgb_model.RDS")
 load("xgb.tune.RDS")
 ```
-
 
 ```{r}
 test %<>% mutate(day=format(click_time,"%d"), hour=as.numeric(format(click_time,"%H") ))
@@ -49,13 +46,15 @@ load("tr_ip_sum_tables.RDS")
 test %<>% first_set()
 ```
 
+```{r}
+test %<>% zero_set_2()
+```
 
 ```{r}
 rm(tb_ip, tb_ip_app, tb_ip_channel, tb_ip_os, tb_ip_device)
 load("tr_ip_sum_comb_tables.RDS")
 test %<>% second_set()
 ```
-
 
 ```{r}
 rm(tb_ip_app_channel, tb_ip_channel_device, tb_ip_device_os)
@@ -64,11 +63,12 @@ test %<>% third_set()
 test %>% head(100)
 ```
 
-
 ```{r}
 test %<>% adjust_set()
-```
 
+test %<>% addNB()
+
+```
 
 ```{r}
 test %<>% mutate(is_attributed=factor(0))
@@ -76,7 +76,6 @@ test %<>% select(-click_time, -day)
 
 testTask <- makeClassifTask(data=test , target = "is_attributed" )
 ```
-
 
 ```{r}
 # Make a new prediction

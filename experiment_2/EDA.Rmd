@@ -34,23 +34,13 @@ set_default_cluster(cluster)
 
 
 ```{r}
-
-myfilename <- "train.csv"
-rdsFile <- paste0(myfilename,".RDS")
-  
-if ( file.exists(rdsFile) ) {
-  load(rdsFile, envir=.GlobalEnv)
-} else {
-  train <- read_csv(myfilename, progress=T)
-  save(train, file = rdsFile)
-} 
-
+load("train.csv.RDS", envir=.GlobalEnv)  
 nr <- train %>% nrow()
 nr
 ```
 
 ```{r}
-train %<>% mutate(id=1:n(), day=format(click_time,"%d") )
+train %<>% mutate(day=format(click_time,"%d") )
 ```
 
 ```{r}
@@ -87,6 +77,86 @@ train %>%
   nrow()
 ```
 
+
+```{r}
+# for exploration
+train %>% 
+  group_by(day, hour) %>% 
+  summarize(pct_att_day_hour=(sum(is_attributed)+1)/(n() +1),n_day_hour=n()) -> tr_day_hour
+
+tr_day_hour
+  
+```
+
+```{r}
+ggplot(tr_day_hour) +
+  geom_line(aes(x=hour,y=n_day_hour,group=day,color=factor(day))) 
+
+  
+```
+
+```{r}
+ggplot(tr_day_hour %>% filter(day!=6)) +
+  geom_line(aes(x=hour,y=pct_att_day_hour,group=day,color=factor(day))) +
+  geom_line(data=tr_hour, aes(x=hour,y=pct_att_hour),color="black")
+  
+```
+
+
+```{r, fig.width=14}
+
+ggplot( tr_app ) + 
+  geom_point(aes(x=n_app, y=pct_att_app, color=factor(app))) + 
+  scale_x_log10() +
+  theme(legend.position = "none")
+  
+```
+
+```{r, fig.width=14}
+
+ggplot( tr_os ) + 
+  geom_point(aes(x=n_os, y=pct_att_os, color=factor(os))) +  
+  scale_x_log10() +
+  theme(legend.position = "none")
+
+```
+
+
+```{r, fig.width=14}
+
+ggplot( tr_channel ) + 
+  geom_point(aes(x=n_channel, y=pct_att_channel, color=factor(channel))) + 
+  scale_x_log10()+
+  theme(legend.position = "none")
+
+```
+
+```{r, fig.width=14}
+
+ggplot( tr_device ) + 
+  geom_point(aes(x=n_device, y=pct_att_device, color=factor(device))) +
+  scale_x_log10() +
+  theme(legend.position = "none")
+  
+```
+
+```{r, fig.width=14}
+
+ggplot( tr_device_app ) + 
+  geom_point(aes(x=n_device_app, y=pct_att_device_app, color=factor(device))) +
+  scale_x_log10() +
+  theme(legend.position = "none")
+  
+```
+
+```{r, fig.width=14}
+
+ggplot(tr_channel_device_os ) + 
+  geom_point(aes(x=n_channel_device_os, y=pct_att_channel_device_os, color=factor(channel))) +
+  scale_x_log10() +
+  theme(legend.position = "none")
+  
+```
 
 # SLICE BY 4 (optionally)
 
@@ -131,6 +201,143 @@ tb %>%
 ```{r}
 tr %<>% mutate(day=format(click_time,"%d"))
 ```
+
+```{r}
+
+# for exploration
+
+tr %>% 
+  group_by(day,tr) %>% 
+  summarise( n_day=n(), min_ip=min(ip), max_ip=max(ip)) %>% 
+  collect() %>% 
+  ungroup() %>% 
+  group_by(day,tr) %>% 
+  summarise( n_day=sum(n_day), min_ip=min(min_ip), max_ip=max(max_ip)) -> tb_day 
+
+tb_day
+```
+
+```{r}
+
+all %>% 
+  group_by(day, hour,tr) %>% 
+  summarize(n=n(), pct=mean(is_attributed,na.rm=T))  -> tb_hour
+
+tb_hour
+
+```
+
+```{r}
+ggplot(tb_hour) +
+  geom_bar(aes(x=hour, y=n, fill=factor(day)), position="dodge", stat="identity") + 
+  scale_y_log10()
+```
+
+
+```{r}
+ggplot(tb_hour) +
+  geom_line(aes(x=hour, y=pct, group=day, color=factor(day)), position="dodge", stat="identity") 
+```
+
+```{r}
+ggplot(tb_hour) +
+  geom_line(aes(x=hour, y=pct, color=factor(day)), position="dodge", stat="identity") + 
+  facet_wrap(~tr,ncol=2)
+```
+
+
+
+```{r}
+# for exploration
+tr %>% 
+  group_by(ip, day, hour) %>% 
+    summarise( n_ip = n(), pct_att_ip = ( sum(is_attributed) + 1)/( sum(tr) + 1 )) %>% 
+  collect() %>% 
+  ungroup() %>% 
+  group_by(day, hour) %>% 
+  arrange(ip) %>% 
+  mutate( pct_roll = roll_meanr(pct_att_ip, n=1000), pct_roll_5 = roll_meanr(pct_att_ip, n=5000),
+          n_roll = roll_meanr(n_ip, n=1000), n_roll_5 = roll_meanr(n_ip, n=5000) ) -> tb_ip_hour
+
+tb_ip_hour %>% head(100)
+
+```
+
+```{r, fig.height=10, fig.width=14}
+ggplot(tb_ip_hour)+
+  geom_line(aes(x=ip,y=n_roll,group=day,color=factor(day))) +
+  facet_wrap(~factor(hour), ncol = 6)
+```
+
+
+```{r, fig.height=10, fig.width=14}
+ggplot(tb_ip_hour)+
+  geom_line(aes(x=ip,y=pct_roll,group=hour,color=factor(hour))) +
+  facet_wrap(~day, ncol = 1)
+```
+
+```{r, fig.height=10, fig.width=14}
+ggplot(tb_ip_hour)+
+  geom_line(aes(x=ip,y=n_roll,group=hour,color=factor(hour))) +
+  facet_wrap(~day, ncol = 1)
+```
+
+```{r}
+
+tr %>% 
+  group_by(ip, day) %>% 
+    summarise( n_ip = n(), pct_att_ip = ( sum(is_attributed) + 1)/( n() + 1 )) %>% 
+  collect() %>% 
+  ungroup() %>% 
+  group_by(day) %>% 
+  arrange(ip) %>% 
+  mutate( pct_roll = roll_meanr(pct_att_ip, n=1000), pct_roll_5 = roll_meanr(pct_att_ip, n=5000),
+          n_roll = roll_meanr(n_ip, n=1000), n_roll_5 = roll_meanr(n_ip, n=5000) ) -> tb_ip
+
+tb_ip
+
+```
+
+```{r, fig.height=5}
+ggplot(tb_ip)+
+  geom_line(aes(x=ip,y=n_roll_5,group=day,color=factor(day))) 
+```
+
+```{r, fig.height=5}
+ggplot(tb_ip)+
+  geom_line(aes(x=ip,y=n_roll,group=day,color=factor(day)))
+```
+
+```{r, fig.height=5}
+ggplot(tb_ip)+
+  geom_line(aes(x=ip,y=n_roll,group=day,color=factor(day))) +
+  facet_wrap(~day, ncol = 1)
+```
+
+```{r}
+ggplot(tb_ip) + 
+  geom_line(aes(x=ip,y=pct_roll,group=day,color=factor(day)) )
+```
+
+```{r}
+ggplot(tb_ip) + 
+  geom_line(aes(x=ip,y=pct_roll,group=day,color=factor(day))) +
+  facet_wrap(~day, ncol = 1)
+```
+
+```{r, fig.height=8}
+ggplot(tb_ip_hour) + geom_point(aes(x=n_roll,y=pct_roll,group=day,color=factor(day), alpha=0.1))  + facet_wrap(~hour, ncol = 6)
+```
+
+```{r, fig.height=5}
+ggplot(tb_ip_hour) + geom_point(aes(x=n_roll,y=pct_roll,group=day,color=factor(hour), alpha=0.1))  + facet_wrap(~day, ncol = 2)
+```
+
+
+```{r}
+ggplot(tb_ip) + geom_point(aes(x=n_roll,y=pct_roll,group=day,color=day))  + facet_wrap(~day, ncol = 1)
+```
+
 
 ## TEST
 
@@ -247,11 +454,14 @@ ggplot(distinct_all_n) +
 
 ```{r}
 tr %<>%   mutate(diff=attributed_time-click_time) 
+
+tr %>% filter(is_attributed==1) %>% mutate( hour_a=as.numeric(format(attributed_time,"%H") ) ) %>% collect() -> tr_pos
 ```
 
 ```{r}
-ggplot(tr %>% filter(is_attributed==1) %>% collect()) +
-  geom_histogram(aes(x=diff), binwidth = 600)  + scale_y_log10() + scale_x_time()
+ggplot(tr_pos) +
+  geom_tile(aes(x=hour,y=hour_a))  
++ scale_y_log10() + scale_x_time()
 ```
 
 ```{r}
@@ -300,3 +510,53 @@ tr_join %>%
 ```
 
 
+## how the ip ranges are calculated
+
+```{r}
+ggplot(tb_ip %>% filter(ip>126400 & ip < 126800)) + geom_line(aes(x=ip, y=pct_roll,group=day, color=factor(day)))
+```
+
+```{r}
+ggplot(tb_ip %>% filter(ip>212700 & ip < 212900)) + geom_line(aes(x=ip, y=pct_roll,group=day, color=factor(day)))
+```
+
+```{r}
+ggplot(tb_ip %>% filter(ip>287000 & ip < 288000)) + geom_line(aes(x=ip, y=pct_roll,group=day, color=factor(day)))
+```
+
+```{r}
+ggplot(tb_ip) + geom_line(aes(x=ip, y=pct_w_roll, group=day, color=factor(day)))
+```
+
+```{r}
+ggplot(tb_ip) + geom_line(aes(x=ip, y=pct_roll,group=day, color=factor(day)))
+```
+
+```{r}
+ggplot(tb_ip %>% mutate(day<10)) +
+  geom_line(aes(x=ip, y=n_roll/12500,group=day, color=factor(day))) 
+```
+
+```{r}
+ggplot(tb_ip %>% mutate(day10=day>9)) +
+  geom_line(aes(x=ip, y=n_roll,group=day, color=factor(day))) +
+  facet_wrap(~day10,ncol=2)
+```
+
+```{r}
+ggplot(tb_ip %>% mutate(day10=day>9) ) +
+  geom_point(aes(x=ip, y=pct_mean,group=day, color=factor(day))) +
+  facet_wrap(~day10, ncol=2, scales="free_x")
+```
+
+```{r}
+ggplot(tb_ip %>% mutate(day10=day>9) ) +
+  geom_line(aes(x=ip, y=n_mean,group=day, color=factor(day))) +
+  facet_wrap(~day10,ncol=2, scales="free_x")
+```
+
+```{r}
+ggplot(tb_ip %>% mutate(day10=day>9) %>% filter((ip>126400 & ip<126800 & day==7)|(ip>212700&ip<212900&day==8)|(ip>287000 & ip < 288000 & day==9))) +
+  geom_line(aes(x=ip, y=n_roll,group=day, color=factor(day))) +
+  facet_wrap(~day,ncol=2, scales="free_x")
+```

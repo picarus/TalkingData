@@ -49,10 +49,21 @@ params <- getParamSet("classif.xgboost")
 params
 ```
 
+
+
 ```{r}
+
+event_rate <- 0.002
+
+child_weight <- 1/sqrt(event_rate)
+
 xgb_param <- makeParamSet(
-  makeIntegerParam("max_depth", lower = 1, upper = 10),  # number of splits in each tree
+  makeNumericParam("gamma", lower= -2, upper = 0, trafo = function(x) 10^x),
+  makeIntegerParam("max_depth", lower = 3, upper = 10),  # number of splits in each tree
   makeNumericParam("eta", lower = .1, upper = .8), # "shrinkage" - prevents overfitting
+  makeNumericParam('min_child_weight', lower=child_weight/2, upper=child_weight*2),
+  makeNumericParam("colsample_bytree", lower=0.3 , upper=0.6),
+  makeNumericParam("colsample_bylevel", lower=0.7 , upper=1),
   makeNumericParam("lambda", lower = -1, upper = 0, trafo = function(x) 10^x) # L2 regularization - prevents overfitting
 )
 ```
@@ -60,7 +71,7 @@ xgb_param <- makeParamSet(
 ```{r}
 # mlrMBO part
 mboControl <- makeMBOControl()
-mboControl <- setMBOControlTermination(mboControl, iters = 1, time.budget=18000)  # in addition to the initials
+mboControl <- setMBOControlTermination(mboControl, iters = 1, time.budget=900)  # in addition to the initials
 mboControl <- setMBOControlInfill(mboControl, crit = makeMBOInfillCritAEI()) # augmented expected improvement
 # mlr part
 tuneMBOControl <- makeTuneControlMBO(mbo.control = mboControl)
@@ -76,12 +87,16 @@ train_cv_matrix <- xgboost::xgb.DMatrix(data=data.matrix(train_cv %>% select(-is
                                         label=train_cv$is_attributed, missing = NA, weight=train_cv$wghts)
 valid_cv_matrix <- xgboost::xgb.DMatrix(data=data.matrix(valid_cv %>% select(-is_attributed, -wghts)),
                                         label=valid_cv$is_attributed, missing = NA, weight=valid_cv$wghts)
+```
+
+```{r}
 
 xgb <- makeLearner( "classif.xgboost", 
                     predict.type = "prob",
                     par.vals = list(
                       objective = "binary:logistic",
                       eval_metric = "auc",
+                      subsample = 1,
                       watchlist = list( train = train_cv_matrix, val = valid_cv_matrix),
                       nrounds = 50, 
                       maximize = T,
@@ -104,11 +119,13 @@ xgbSimple <- setHyperPars(xgb, par.vals = list(max_depth=5, eta=0.7, lambda=10^-
 xgb_model_simple <- train(xgbSimple, trainTask)
 
 save(xgb_model_simple, file="xgb_model_simple.RDS")
+
+xgb_model <- xgb_model_simple
 ```
 
 
 ```{r}
-
+#train_cv %>% head(100)
 resTune <- tuneParams(learner=xgb, 
                 task=trainTask, 
                 resampling=makeResampleDesc("Subsample", iters = 2, split = 0.95),

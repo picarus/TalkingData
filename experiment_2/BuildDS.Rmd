@@ -25,10 +25,12 @@ source("utils_BuildDS.R")
 # Load Data
 
 ```{r}
-load("train.csv.RDS")
+load("../train.csv.RDS")
 #load("test_sup_train.Rds")
 #train %<>% mutate(id=1:n(), day=format(click_time,"%d"), hour=format(click_time,"%H") )
 #save(train, file="train.csv.RDS")
+
+train %>% head(100)
 ```
 
 # Subsampling
@@ -85,7 +87,7 @@ ratio
 
 ```{r}
 times <- 2
-pct <- 1/ratio * 2
+pct <- 1/ratio * 3
 tr_pt <- sample(neg_keys_nr, size=neg_keys_nr * pct) %>% sort()
 tr_pt %>%  head(20)
 
@@ -98,10 +100,10 @@ neg_keys_pt %>% head(100)
 train %>% semi_join(neg_keys_pt, by=c("ip","day","device","os","channel")) -> tr_neg
 
 train_pt <- rbind(tr_neg, train_pos_df)
-
 train_pt %<>% mutate( wghts = c(rep(1/pct,nrow(tr_neg)),rep(1,nrow(train_pos_df))))
 
-#rm(tr_neg, train_pos_df)
+rm(tr_neg, train_pos_df)
+rm(all_diff_df)
 ```
 
 ```{r}
@@ -114,7 +116,9 @@ train_pt %>% head(100)
 ```
 
 ```{r}
-rm(tr_app, tr_channel, tr_os, tr_device, tr_channel_device_os, tr_device_app, tr_device_os)
+rm(tr_hour_device_app, tr_channel_hour, tr_hour_channel_device_os, tr_hour_device_os)
+rm(tr_app, tr_hour, tr_channel, tr_os, tr_device, tr_channel_device_os, tr_device_app, tr_device_os)
+gc()
 ```
 
 ```{r}
@@ -122,14 +126,14 @@ load("tr_ip_sum_tables.RDS")
 ```
 
 ```{r}
+train_pt %<>% createIPRange()
 train_pt %<>% first_set()
 train_pt %>% head(100)
 ```
 
 ```{r}
-rm(tb_ip, tb_ip_app, tb_ip_channel, tb_ip_os, tb_ip_device)
+rm( tb_ip_app, tb_ip_channel, tb_ip_os, tb_ip_device);gc()
 ```
-
 
 ```{r}
 load("tr_ip_sum_comb_tables.RDS")
@@ -139,8 +143,12 @@ load("tr_ip_sum_comb_tables.RDS")
 train_pt %<>% second_set()
 train_pt %>% head(100)
 ```
+
+
+
+
 ```{r}
-rm(tb_ip_app_channel, tb_ip_channel_device, tb_ip_device_os)
+rm(tb_ip_app_channel, tb_ip_channel_device, tb_ip_device_os, tb_ip_device_app, tb_ip_os_app, tb_ip_os_channel)
 ```
 
 
@@ -154,24 +162,23 @@ train_pt %>% head(100)
 ```
 
 ```{r}
-
-train_pt %>% head(100)
-
+rm(tb_ip_channel_device_app, tb_ip_channel_device_os, tb_ip_channel_os_app, tb_ip_channel_os_app_device, tb_ip_device_os_app, tb_rng)
+rm(all_diff_df, neg_diff_df, neg_keys_pt, pos_diff_df)
 ```
 
 ```{r}
 train_pt %<>% adjust_set()
+train_pt %<>% addNB()
 train_pt %<>% select(-day, -id, -attributed_time)
 ```
 
+
 ```{r}
-TR_TIME <- "2017-11-07 14:"
-VAL_TIME <- "2017-11-09 04:"
 
-train_pt %<>% mutate( wghts = c(rep(1/pct,nrow(tr_neg)),rep(1,nrow(train_pos_df))))
+VAL_TIME <- "2017-11-09 12:"
 
-train_cv <- train_pt %>% filter( TR_TIME <= click_time & click_time < VAL_TIME) %>% select(-click_time)
+train_cv <- train_pt %>% filter( click_time < VAL_TIME ) %>% select(-click_time)
 valid_cv <- train_pt %>% filter( VAL_TIME <= click_time ) %>% select(-click_time)
 
-#rm(train_pt)
+rm(train_pt)
 ```

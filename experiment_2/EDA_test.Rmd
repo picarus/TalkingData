@@ -4,8 +4,25 @@ output: html_notebook
 ---
 
 ```{r}
-load("test_supplement.csv.RDS")
-load("test.csv.RDS")
+library(pacman)
+p_load(ggplot2) # Data visualization
+p_load(readr) # CSV file I/O, e.g. the read_csv function
+p_load(dplyr)
+library(multidplyr)
+p_load(parallel)
+p_load(fasttime)
+p_load(xgboost)
+p_load(parallel)
+p_load(magrittr)
+
+# Input data files are available in the "../input/" directory.
+# For example, running this (by clicking run or pressing Shift+Enter) will list the files in the input directory
+#devtools::install_github("hadley/multidplyr")
+```
+
+```{r}
+load("../test_supplement.csv.RDS")
+load("../test.csv.RDS")
 ```
 
 ```{r}
@@ -32,11 +49,16 @@ nrow(test_sup_new) + nrow(test)
 nrow(test_sup)
 ```
 
+
+```{r}
+nrow(test_2)
+```
+
 ```{r}
 rm(test_sup)
 
 test %<>% mutate(day=format(click_time,"%d"), hour=format(click_time, "%H")) 
-
+test_sup %<>% mutate(day=format(click_time,"%d"), hour=format(click_time, "%H")) 
 test_sup_new %<>% mutate(day=format(click_time,"%d"), hour=format(click_time, "%H")) 
 
 test_sup_train <- test_sup_new %>% filter(day<10) 
@@ -48,8 +70,8 @@ test_sup_new %>%
 
 rm(test_sup_new)
 
-save(test_sup_train, file="test_sup_train.Rds")
-save(test_sup_test, file="test.Rds")
+save(test_sup_train, file="test_sup_train.RDS")
+save(test_sup_test, file="test_sup_test.RDS")
 ```
 
 ```{r}
