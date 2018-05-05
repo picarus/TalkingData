@@ -26,6 +26,11 @@ p_load(rgenoud)
 
 
 ```{r}
+#save(train_cv, valid_cv, file="training.RDS")
+```
+
+
+```{r}
 print(n_cores <- detectCores()-1)
 ```
 
@@ -71,7 +76,7 @@ xgb_param <- makeParamSet(
 ```{r}
 # mlrMBO part
 mboControl <- makeMBOControl()
-mboControl <- setMBOControlTermination(mboControl, iters = 1, time.budget=900)  # in addition to the initials
+mboControl <- setMBOControlTermination(mboControl, iters = 1, time.budget=18000)  # in addition to the initials
 mboControl <- setMBOControlInfill(mboControl, crit = makeMBOInfillCritAEI()) # augmented expected improvement
 # mlr part
 tuneMBOControl <- makeTuneControlMBO(mbo.control = mboControl)
@@ -114,13 +119,13 @@ trainTask <- makeClassifTask(data = train_cv %>% select(-wghts), target = "is_at
 
 
 ```{r}
-xgbSimple <- setHyperPars(xgb, par.vals = list(max_depth=5, eta=0.7, lambda=10^-0.5)) 
-
-xgb_model_simple <- train(xgbSimple, trainTask)
-
-save(xgb_model_simple, file="xgb_model_simple.RDS")
-
-xgb_model <- xgb_model_simple
+# xgbSimple <- setHyperPars(xgb, par.vals = list(max_depth=5, eta=0.7, lambda=10^-0.5)) 
+# 
+# xgb_model_simple <- train(xgbSimple, trainTask)
+# 
+# save(xgb_model_simple, file="xgb_model_simple.RDS")
+# 
+# xgb_model <- xgb_model_simple
 ```
 
 

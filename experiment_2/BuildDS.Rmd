@@ -123,6 +123,12 @@ gc()
 
 ```{r}
 load("tr_ip_sum_tables.RDS")
+load(file="tb_ip.RDS")
+
+#train_pt %<>%  select(-min_ip,-max_ip,-pct_mean)
+
+train_pt %>% head(100)
+
 ```
 
 ```{r}
@@ -132,7 +138,7 @@ train_pt %>% head(100)
 ```
 
 ```{r}
-rm( tb_ip_app, tb_ip_channel, tb_ip_os, tb_ip_device);gc()
+rm( tb_ip_app, tb_ip_channel, tb_ip_os, tb_ip_device, tb_ip, tb_rng);gc()
 ```
 
 ```{r}
@@ -144,13 +150,9 @@ train_pt %<>% second_set()
 train_pt %>% head(100)
 ```
 
-
-
-
 ```{r}
 rm(tb_ip_app_channel, tb_ip_channel_device, tb_ip_device_os, tb_ip_device_app, tb_ip_os_app, tb_ip_os_channel)
 ```
-
 
 ```{r}
 load("tr_ip_sum_4_tables.RDS")
@@ -174,11 +176,10 @@ train_pt %<>% select(-day, -id, -attributed_time)
 
 
 ```{r}
-
 VAL_TIME <- "2017-11-09 12:"
 
 train_cv <- train_pt %>% filter( click_time < VAL_TIME ) %>% select(-click_time)
 valid_cv <- train_pt %>% filter( VAL_TIME <= click_time ) %>% select(-click_time)
-
+save(train_cv, valid_cv, file="training.RDS")
 rm(train_pt)
 ```

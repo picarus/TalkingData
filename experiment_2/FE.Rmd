@@ -186,8 +186,14 @@ tb_rng %>% head(1000)
 ```{r}
 tb_ip <- tr %>% 
   group_by(ip) %>% 
-  summarise(n_ip=n())
+  summarise(n_ip=n()) %>% 
+  collect()
 ```
+
+```{r}
+save(tb_ip, file="tb_ip.RDS")
+```
+
 
 
 ```{r}

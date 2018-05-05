@@ -28,9 +28,9 @@ source("utils_BuildDS.R")
 ```
 
 ```{r}
-load("test.csv.RDS")
-load("xgb_model.RDS")
-load("xgb.tune.RDS")
+load("../test.csv.RDS")
+#load("xgb_model.RDS")
+#load("xgb.tune.RDS")
 ```
 
 ```{r}
@@ -43,36 +43,40 @@ test %<>% zero_set()
 ```{r}
 rm(tr_app, tr_channel, tr_os, tr_device, tr_channel_device_os, tr_device_app, tr_device_os)
 load("tr_ip_sum_tables.RDS")
+load("tb_ip.RDS")
+test %<>% createIPRange()
 test %<>% first_set()
 ```
 
-```{r}
-test %<>% zero_set_2()
-```
 
 ```{r}
-rm(tb_ip, tb_ip_app, tb_ip_channel, tb_ip_os, tb_ip_device)
+rm(tb_rng, tb_ip, tb_ip_app, tb_ip_channel, tb_ip_os, tb_ip_device)
 load("tr_ip_sum_comb_tables.RDS")
 test %<>% second_set()
 ```
 
 ```{r}
-rm(tb_ip_app_channel, tb_ip_channel_device, tb_ip_device_os)
+rm(tb_ip_app_channel, tb_ip_channel_device, tb_ip_device_os, tb_ip_os_app)
 load("tr_ip_sum_4_tables.RDS")
 test %<>% third_set()
-test %>% head(100)
+
 ```
 
 ```{r}
 test %<>% adjust_set()
-
 test %<>% addNB()
-
 ```
 
 ```{r}
 test %<>% mutate(is_attributed=factor(0))
 test %<>% select(-click_time, -day)
+
+save(test, file="testPredict.RDS")
+test %>% head(100)
+```
+
+```{r}
+load("testPredict.RDS")
 
 testTask <- makeClassifTask(data=test , target = "is_attributed" )
 ```

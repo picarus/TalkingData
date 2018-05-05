@@ -15,6 +15,7 @@ addTimeVars <- function(df){
 
 
 zero_set <- function(pt){
+  
   pt %<>% left_join(tr_hour, by="hour")
   pt %<>% left_join(tr_app, by="app")
   pt %<>% left_join(tr_channel, by="channel") 
@@ -27,14 +28,15 @@ zero_set <- function(pt){
   pt %<>% left_join(tr_channel_hour, by=c("hour","channel") )
   pt %<>% left_join(tr_hour_device_app, by=c("hour","device","app") )
   pt %<>% left_join(tr_hour_device_os, by=c("hour","device","os") )
-  pt 
+  pt
+  
 }
 
 
 first_set <- function(pt){
   
   pt %<>% left_join(tb_ip, by="ip")
-  pt %<>% left_join(tb_rng, by="rngNumber") 
+  pt %<>% left_join(tb_rng %>%  select(-min_ip,-max_ip,-pct_mean), by="rngNumber") 
   pt %<>% left_join(tb_ip_app, by=c("rngNumber","app") )
   pt %<>% left_join(tb_ip_channel, by=c("rngNumber","channel") )
   pt %<>% left_join(tb_ip_device, by=c("rngNumber","device") )
@@ -67,7 +69,13 @@ third_set <- function(pt){
 }
 
 addNB <- function(pt) {
-  pt %>% mutate(pct_NB=)
+  pt %>% mutate(pct_NB=pct_att_hour+pct_att_app+pct_att_channel+pct_att_os+pct_att_device+pct_att_channel_device_os+
+                  pct_att_device_app+pct_att_device_os+pct_att_hour_channel_device_os+
+                  pct_att_channel_hour+pct_att_hour_device_app+
+                  pct_att_hour_device_os+
+                  pct_ip_app+pct_ip_channel+pct_ip_device+pct_ip_os+
+                  pct_ip_app_channel+pct_ip_channel_device+pct_ip_device_device_os+pct_ip_os_channel+pct_ip_device_app+
+                  pct_ip_os_app+pct_ip_channel_device_os+pct_ip_device_os_app+pct_ip_channel_device_app+pct_ip_channel_os_app)
 }
 
 adjust_set <- function(pt){
