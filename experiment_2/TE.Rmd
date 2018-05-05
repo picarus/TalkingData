@@ -70,6 +70,7 @@ test %<>% addNB()
 ```{r}
 test %<>% mutate(is_attributed=factor(0))
 test %<>% select(-click_time, -day)
+test %<>% select(-ip)
 
 save(test, file="testPredict.RDS")
 test %>% head(100)
@@ -95,7 +96,7 @@ prediction %>% head(100)
 
 ```{r}
 ggplot(prediction) +
-  geom_histogram(aes(x=))
+  geom_histogram(aes(x=is_attributed), binwidth=0.01) + scale_y_log10()
   
 ```
 

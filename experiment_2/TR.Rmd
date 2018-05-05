@@ -45,6 +45,13 @@ table(train_cv$is_attributed)
 ```
 
 ```{r}
+train_cv %<>% select(-ip, -tm)
+valid_cv %<>% select(-ip, -tm)
+train_cv %>% head(100)
+```
+
+
+```{r}
 set.seed(0)
 ```
 
@@ -103,7 +110,7 @@ xgb <- makeLearner( "classif.xgboost",
                       eval_metric = "auc",
                       subsample = 1,
                       watchlist = list( train = train_cv_matrix, val = valid_cv_matrix),
-                      nrounds = 50, 
+                      nrounds = 100, 
                       maximize = T,
                       verbose = 1, 
                       nthread = n_cores,
@@ -119,18 +126,18 @@ trainTask <- makeClassifTask(data = train_cv %>% select(-wghts), target = "is_at
 
 
 ```{r}
-# xgbSimple <- setHyperPars(xgb, par.vals = list(max_depth=5, eta=0.7, lambda=10^-0.5)) 
-# 
-# xgb_model_simple <- train(xgbSimple, trainTask)
-# 
-# save(xgb_model_simple, file="xgb_model_simple.RDS")
-# 
-# xgb_model <- xgb_model_simple
+xgbSimple <- setHyperPars(xgb, par.vals = resTune$x)
+
+xgb_model_simple <- train(xgbSimple, trainTask)
+
+save(xgb_model_simple, file="xgb_model_simple.RDS")
+
+xgb_model <- xgb_model_simple
 ```
 
 
 ```{r}
-#train_cv %>% head(100)
+
 resTune <- tuneParams(learner=xgb, 
                 task=trainTask, 
                 resampling=makeResampleDesc("Subsample", iters = 2, split = 0.95),
