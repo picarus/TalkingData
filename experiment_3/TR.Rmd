@@ -21,13 +21,10 @@ p_load(parallelMap)
 p_load(DiceKriging)
 p_load(rgenoud)
 
-
 ```
 
 
-```{r}
-#save(train_cv, valid_cv, file="training.RDS")
-```
+
 
 
 ```{r}
@@ -45,8 +42,7 @@ table(train_cv$is_attributed)
 ```
 
 ```{r}
-train_cv %<>% select(-ip, -tm)
-valid_cv %<>% select(-ip, -tm)
+
 train_cv %>% head(100)
 ```
 
@@ -83,7 +79,7 @@ xgb_param <- makeParamSet(
 ```{r}
 # mlrMBO part
 mboControl <- makeMBOControl()
-mboControl <- setMBOControlTermination(mboControl, iters = 1, time.budget=3600)  # in addition to the initials
+mboControl <- setMBOControlTermination(mboControl, iters = 1, time.budget=18000)  
 mboControl <- setMBOControlInfill(mboControl, crit = makeMBOInfillCritAEI()) # augmented expected improvement
 # mlr part
 tuneMBOControl <- makeTuneControlMBO(mbo.control = mboControl)
@@ -94,11 +90,24 @@ tuneMBOControl <- makeTuneControlMBO(mbo.control = mboControl)
 
 
 ```{r}
+trainTask <- makeClassifTask(data = train_cv %>% select(-wghts), target = "is_attributed", positive = 1)
+```
+
+```{r}
 
 train_cv_matrix <- xgboost::xgb.DMatrix(data=data.matrix(train_cv %>% select(-is_attributed, -wghts)),
                                         label=train_cv$is_attributed, missing = NA, weight=train_cv$wghts)
+
+rm(train_cv);gc()
+
+```
+
+```{r}
+
 valid_cv_matrix <- xgboost::xgb.DMatrix(data=data.matrix(valid_cv %>% select(-is_attributed, -wghts)),
                                         label=valid_cv$is_attributed, missing = NA, weight=valid_cv$wghts)
+
+rm(valid_cv);gc()
 ```
 
 ```{r}
@@ -120,9 +129,7 @@ xgb <- makeLearner( "classif.xgboost",
 
 ```
 
-```{r}
-trainTask <- makeClassifTask(data = train_cv %>% select(-wghts), target = "is_attributed", positive = 1)
-```
+
 
 
 ```{r}

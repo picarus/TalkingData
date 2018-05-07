@@ -63,15 +63,13 @@ pos_records_nr
 
 Positive rows
 
-TODO: Get the records not in pos, and sample from them (not from its keys)
-
 ```{r}
-all_diff_df %>% anti_join(pos_diff_df,by=c("ip","day","device","os","channel")) -> neg_diff_df
-neg_diff_df %>% nrow() -> neg_keys_nr
-neg_keys_nr
+train %>% anti_join(pos_diff_df,by=c("ip","day","device","os","channel")) -> neg_df
+neg_df %>% nrow() -> neg_df_nr
+neg_df_nr
 ```
 
-Keys to choose from
+Records to choose from
 
 ```{r}
 nr <- nrow(train)
@@ -79,33 +77,35 @@ nr
 ```
 
 ```{r}
-neg_keys_nr/pos_keys_nr
+neg_df_nr/pos_records_nr
 ```
 
 ```{r}
-ratio <- round((nr - pos_records_nr)/pos_records_nr) + 1
+ratio <- round(neg_df_nr/pos_records_nr) + 1
 ratio
 ```
 
 ```{r}
-times <- 2
-pct <- 1/ratio * 9
-tr_pt <- sample(neg_keys_nr, size=neg_keys_nr * pct) %>% sort()
+N_neg <- 5*10^7
+tr_pt <- sample(neg_df_nr, size=N_neg) %>% sort()
 tr_pt %>%  head(20)
 
-neg_keys_pt <- neg_diff_df[tr_pt,]
-neg_keys_pt %>% head(100)
+neg_pt <- neg_df[tr_pt,]
+neg_pt %>% head(100)
 ```
 
 ```{r}
 
-train %>% semi_join(neg_keys_pt, by=c("ip","day","device","os","channel")) -> tr_neg
+pct <- neg_df_nr / N_neg
+train_pt <- rbind(neg_pt, train_pos_df)
+train_pt %<>% mutate( wghts = c( rep( pct, nrow(neg_pt)), rep( 1, nrow(train_pos_df))))
 
-train_pt <- rbind(tr_neg, train_pos_df)
-train_pt %<>% mutate( wghts = c(rep(1/pct,nrow(tr_neg)),rep(1,nrow(train_pos_df))))
+```
 
-rm(tr_neg, train_pos_df)
-rm(all_diff_df)
+```{r}
+rm(neg_pt, neg_df, train_pos_df, pos_diff_df, all_diff_df, train, tr_pt)
+gc()
+
 ```
 
 ```{r}
@@ -125,9 +125,7 @@ gc()
 
 ```{r}
 load("tr_ip_sum_tables.RDS")
-load(file="tb_ip.RDS")
-
-#train_pt %<>%  select(-min_ip,-max_ip,-pct_mean)
+load(file="tr_ip.RDS")
 
 train_pt %>% head(100)
 
@@ -166,8 +164,8 @@ train_pt %>% head(100)
 ```
 
 ```{r}
-rm(tb_ip_channel_device_app, tb_ip_channel_device_os, tb_ip_channel_os_app, tb_ip_channel_os_app_device, tb_ip_device_os_app, tb_rng)
-rm(all_diff_df, neg_diff_df, neg_keys_pt, pos_diff_df)
+rm(tb_ip_channel_device_app, tb_ip_channel_device_os, tb_ip_channel_os_app, tb_ip_channel_os_app_device, tb_ip_device_os_app)
+gc()
 ```
 
 ```{r}
@@ -182,6 +180,6 @@ VAL_TIME <- "2017-11-09 12:"
 
 train_cv <- train_pt %>% filter( click_time < VAL_TIME ) %>% select(-click_time)
 valid_cv <- train_pt %>% filter( VAL_TIME <= click_time ) %>% select(-click_time)
-save(train_cv, valid_cv, file="training.RDS")
+#save(train_cv, valid_cv, file="training.RDS")
 rm(train_pt)
 ```

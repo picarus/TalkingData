@@ -18,7 +18,7 @@ p_load(RcppRoll)
 
 # Input data files are available in the "../input/" directory.
 # For example, running this (by clicking run or pressing Shift+Enter) will list the files in the input directory
-#devtools::install_github("hadley/multidplyr")
+# devtools::install_github("hadley/multidplyr")
 ```
 
 ```{r}
@@ -193,7 +193,7 @@ tb_ip <- tr %>%
 ```
 
 ```{r}
-save(tb_ip, file="tb_ip.RDS")
+save(tb_ip, file="tr_ip.RDS")
 ```
 
 
