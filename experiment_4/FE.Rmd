@@ -1,0 +1,406 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+library(pacman)
+p_load(ggplot2) # Data visualization
+p_load(readr) # CSV file I/O, e.g. the read_csv function
+p_load(dplyr)
+library(multidplyr)
+p_load(parallel)
+p_load(fasttime)
+p_load(xgboost)
+p_load(parallel)
+p_load(magrittr)
+p_load(RcppRoll)
+
+# Input data files are available in the "../input/" directory.
+# For example, running this (by clicking run or pressing Shift+Enter) will list the files in the input directory
+# devtools::install_github("hadley/multidplyr")
+```
+
+```{r}
+source("utils_EDA.R")
+source("utils_BuildDS.R")
+```
+
+# Load Data
+
+```{r}
+
+load("../train.csv.RDS")
+#train %<>% addTimeVars()
+#save(train, file="../train.csv.RDS" )
+
+```
+
+# join the two datasets
+
+# Feature Engineering
+
+TODO: deal with NA's, in test mainly: 60% of IP's in test, not in train???
+TODO: filter hours to those on test set (and validation)
+TODO: consider duplicates
+
+https://www.kaggle.com/its7171/ip-encoding-looks-ok-data-is-clean
+https://www.kaggle.com/cpmpml/ip-download-rates
+
+TODO: window of 1hr, 4hr, 12hr, ...
+
+
+```{r}
+
+train %>% 
+  group_by(hour) %>% 
+  summarize(pct_att_hour=(sum(is_attributed)+1)/(n()+1),n_hour=n()) %>% 
+  ungroup() -> tr_hour
+
+train %>% 
+  group_by(device) %>%
+  summarize( pct_att_device=log10((sum(is_attributed)+1)/(n()+1)), n_device=n() ) %>%
+  ungroup() -> tr_device
+
+train %>% 
+  group_by(app) %>%
+  summarize( pct_att_app=log10((sum(is_attributed)+1)/(n()+1)), n_app=n() ) %>%
+  ungroup() -> tr_app
+
+train %>% 
+  group_by(os) %>%
+  summarize(pct_att_os=log10((sum(is_attributed)+1)/(n()+1)), n_os=n() ) %>% 
+  ungroup() -> tr_os
+
+train %>% 
+  group_by(channel) %>% 
+  summarize(pct_att_channel=log10((sum(is_attributed)+1)/(n()+1)), n_channel=n() ) %>% 
+  ungroup() -> tr_channel
+
+train %>% 
+  group_by(channel,hour) %>% 
+  summarize(pct_att_channel_hour=log10((sum(is_attributed)+1)/(n()+1)), n_channel_hour=n() ) %>% 
+  ungroup() -> tr_channel_hour
+
+train %>% 
+  group_by(device,os) %>%
+  summarize(pct_att_device_os=log10((sum(is_attributed)+1)/(n()+1)), n_device_os=n() ) %>%
+  ungroup() -> tr_device_os
+
+train %>% 
+  group_by(device,app) %>%
+  summarize(pct_att_device_app=log10((sum(is_attributed)+1)/(n()+1)), n_device_app=n() ) %>%
+  ungroup() -> tr_device_app
+
+train %>% 
+  group_by(hour, device,os) %>%
+  summarize(pct_att_hour_device_os=log10((sum(is_attributed)+1)/(n()+1)), n_hour_device_os=n() ) %>%
+  ungroup() -> tr_hour_device_os
+
+train %>% 
+  group_by(hour, device,app) %>%
+  summarize(pct_att_hour_device_app=log10((sum(is_attributed)+1)/(n()+1)), n_hour_device_app=n() ) %>%
+  ungroup() -> tr_hour_device_app
+
+train %>% 
+  group_by(channel,device,os) %>%
+  summarize(pct_att_channel_device_os=log10((sum(is_attributed)+1)/(n()+1)), n_channel_device_os=n() ) %>%
+  ungroup()  -> tr_channel_device_os
+
+train %>% 
+  group_by(hour, channel,device,os) %>%
+  summarize(pct_att_hour_channel_device_os=log10((sum(is_attributed)+1)/(n()+1)), n_hour_channel_device_os=n() ) %>%
+  ungroup()  -> tr_hour_channel_device_os
+
+```
+
+
+```{r}
+save( tr_device, tr_app, tr_os, tr_channel, tr_hour, 
+      tr_channel_hour, tr_device_os, tr_device_app, 
+      tr_hour_device_os, tr_hour_device_app, tr_channel_device_os, 
+      tr_hour_channel_device_os, file="tr_sum_tables.RDS")
+rm( tr_device, tr_app, tr_os, tr_channel, tr_hour, 
+    tr_channel_hour, tr_device_os, tr_device_app, 
+    tr_hour_device_os, tr_hour_device_app, tr_channel_device_os, tr_hour_channel_device_os);gc()
+```
+
+```{r}
+
+load("../all.RDS")
+  
+all %>% colnames()
+all %>% head(100)
+
+```
+
+```{r}
+
+print(n_cores <- detectCores()-1)
+cluster <- create_cluster(n_cores)
+print(cluster)
+set_default_cluster(cluster)
+
+```
+
+
+```{r}
+tr <- partition(all, ip, cluster=cluster)
+
+#rm(all); gc()
+
+```
+
+```{r}
+tr %<>% createIPRange()
+```
+
+```{r}
+
+tr %>% 
+  group_by(ip, rngNumber, day) %>% 
+  summarise( n_ip = n(), n_att = sum(is_attributed, na.rm=T) ) %>% 
+  mutate( pct_att_ip = ( n_att + 1) / ( n_ip + 1 ) ) %>% 
+  collect() %>% 
+  ungroup() %>% 
+  group_by(day, rngNumber) %>% 
+  arrange(ip) %>% 
+  mutate( pct_w_att_ip = (sum(n_att, na.rm=T)+1)/(sum(n_ip, na.rm=T)+1) ) %>% 
+  mutate( pct_roll = roll_meanr(pct_att_ip, n=100, na.rm = T), 
+          pct_w_roll = roll_meanr(pct_w_att_ip, n=100, na.rm = T), 
+          n_roll = roll_meanr(n_ip, n=100, na.rm = T) ) -> tb_ip_raw
+
+tb_ip_raw %>% head(1000)
+
+```
+
+```{r}
+tb_ip_raw %>% 
+  group_by( rngNumber ) %>% 
+  summarize(min_ip=min(ip), max_ip=max(ip), pct_mean = mean(pct_att_ip, na.rm=T), pct_w_mean=sum(n_att,na.rm=T)/sum(n_ip,na.rm=T), n_mean = mean(n_ip, na.rm=T)) %>% 
+  ungroup() -> tb_rng
+
+tb_rng %>% head(1000)
+```
+
+```{r}
+tb_ip <- tr %>% 
+  group_by(ip) %>% 
+  summarise(n_ip=n()) %>% 
+  collect()
+```
+
+```{r}
+save(tb_ip, file="tr_ip.RDS")
+```
+
+
+
+```{r}
+ggplot(tb_rng) +
+  geom_line(aes(x=n_mean,y=pct_mean)) +
+  geom_line(aes(x=n_mean,y=pct_w_mean))
+```
+
+```{r}
+
+tr %>% 
+  group_by(ip, rngNumber, device) %>% 
+  summarise( n_ip = sum(tr), n_att = sum(is_attributed)) %>% 
+  collect() %>%
+  ungroup() %>% 
+  group_by(rngNumber, device) %>% 
+  summarise( pct_ip_device = log10((sum(n_att, na.rm=T)+1) / (sum(n_ip)+1)) ) -> tb_ip_device
+  
+tr %>%
+  group_by(ip, rngNumber, os) %>%
+  summarise( n_ip = sum(tr), n_att = sum(is_attributed)) %>% 
+  collect() %>%
+  ungroup() %>% 
+  group_by(rngNumber, os) %>% 
+  summarise( pct_ip_os = log10((sum(n_att, na.rm=T)+1) / (sum(n_ip)+1) )) -> tb_ip_os
+  
+tr %>%
+  group_by(ip, rngNumber, app) %>%
+  summarise( n_ip = sum(tr), n_att = sum(is_attributed)) %>% 
+  collect() %>%
+  ungroup() %>% 
+  group_by(rngNumber, app) %>% 
+  summarise( pct_ip_app = log10((sum(n_att, na.rm=T)+1) / (sum(n_ip)+1) )) -> tb_ip_app
+  
+tr %>%
+  group_by(ip, rngNumber, channel) %>%
+  summarise( n_ip = sum(tr), n_att = sum(is_attributed)) %>% 
+  collect() %>%
+  ungroup() %>% 
+  group_by(rngNumber, channel) %>% 
+  summarise( pct_ip_channel = log10((sum(n_att, na.rm=T)+1) / (sum(n_ip)+1) )) -> tb_ip_channel
+
+```
+
+```{r}
+save(tb_ip, tb_rng, tb_ip_app, tb_ip_os, tb_ip_channel, tb_ip_device, file="tr_ip_sum_tables.RDS")
+rm(tb_ip, tb_rng, tb_ip_raw, tb_ip_app, tb_ip_os, tb_ip_channel, tb_ip_device)
+```
+
+
+```{r}
+tr %>%
+  group_by(ip, rngNumber, app, channel) %>%
+   summarise( n_ip = sum(tr), n_att = sum(is_attributed)) %>% 
+  collect() %>%
+  ungroup() %>% 
+  group_by(rngNumber, app, channel) %>% 
+  summarise( pct_ip_app_channel = log10((sum(n_att, na.rm=T)+1) / (sum(n_ip)+1) )) -> tb_ip_app_channel
+
+tr %>%
+  group_by(ip, rngNumber, os, channel) %>%
+   summarise( n_ip = sum(tr), n_att = sum(is_attributed)) %>% 
+  collect() %>%
+  ungroup() %>% 
+  group_by(rngNumber, os, channel) %>% 
+  summarise( pct_ip_os_channel = log10((sum(n_att, na.rm=T)+1) / (sum(n_ip)+1) )) -> tb_ip_os_channel
+
+tr %>%
+  group_by(ip, rngNumber, device, os) %>%
+   summarise( n_ip = sum(tr), n_att = sum(is_attributed)) %>% 
+  collect() %>%
+  ungroup() %>% 
+  group_by(rngNumber, device, os) %>% 
+  summarise( pct_ip_device_device_os = log10((sum(n_att, na.rm=T)+1) / (sum(n_ip)+1) ) ) -> tb_ip_device_os
+
+tr %>%
+  group_by(ip, rngNumber, device, app) %>%
+   summarise( n_ip = sum(tr), n_att = sum(is_attributed)) %>% 
+  collect() %>%
+  ungroup() %>% 
+  group_by(rngNumber, device, app) %>% 
+  summarise( pct_ip_device_app = log10((sum(n_att, na.rm=T)+1) / (sum(n_ip)+1) )) -> tb_ip_device_app
+
+tr %>%
+  group_by(ip, rngNumber, os, app) %>%
+   summarise( n_ip = sum(tr), n_att = sum(is_attributed)) %>% 
+  collect() %>%
+  ungroup() %>% 
+  group_by(rngNumber, os, app) %>% 
+  summarise( pct_ip_os_app = log10((sum(n_att, na.rm=T)+1) / (sum(n_ip)+1) )) -> tb_ip_os_app
+
+tr %>%
+  group_by(ip, rngNumber, channel, device) %>%
+   summarise( n_ip = sum(tr), n_att = sum(is_attributed)) %>% 
+  collect() %>%
+  ungroup() %>% 
+  group_by(rngNumber, channel, device) %>% 
+  summarise( pct_ip_channel_device = log10((sum(n_att, na.rm=T)+1) / (sum(n_ip)+1) ) ) -> tb_ip_channel_device
+
+```
+
+```{r}
+save(tb_ip_app_channel, tb_ip_os_channel, tb_ip_device_os, tb_ip_device_app, tb_ip_channel_device, tb_ip_os_app, file="tr_ip_sum_comb_tables.RDS")
+rm(tb_ip_app_channel, tb_ip_os_channel, tb_ip_device_os, tb_ip_device_app, tb_ip_channel_device, tb_ip_os_app)
+```
+
+```{r}
+
+tr %>%
+  group_by(ip, rngNumber, channel, device, os) %>%
+  summarise( n_ip = sum(tr), n_att = sum(is_attributed)) %>% 
+  collect() %>%
+  ungroup() %>% 
+  group_by(rngNumber, channel, device, os) %>% 
+  summarise( pct_ip_channel_device_os = log10((sum(n_att, na.rm=T)+1) / (sum(n_ip)+1) )) -> tb_ip_channel_device_os
+
+tr %>%
+  group_by(ip, rngNumber, device, os, app) %>%
+  summarise( n_ip = sum(tr), n_att = sum(is_attributed)) %>% 
+  collect() %>%
+  ungroup() %>% 
+  group_by(rngNumber, device, os, app) %>% 
+  summarise( pct_ip_device_os_app =  log10((sum(n_att, na.rm=T)+1) / (sum(n_ip)+1) )) -> tb_ip_device_os_app
+
+tr %>%
+  group_by(ip, rngNumber, channel, device, app) %>%
+  summarise( n_ip = sum(tr), n_att = sum(is_attributed)) %>% 
+  collect() %>%
+  ungroup() %>% 
+  group_by(rngNumber, channel, device, app) %>% 
+  summarise( pct_ip_channel_device_app = log10((sum(n_att, na.rm=T)+1) / (sum(n_ip)+1) ) ) -> tb_ip_channel_device_app
+
+tr %>%
+  group_by(ip, rngNumber, channel, os, app) %>%
+  summarise( n_ip = sum(tr), n_att = sum(is_attributed)) %>% 
+  collect() %>%
+  ungroup() %>% 
+  group_by(rngNumber, channel, os, app) %>% 
+  summarise( pct_ip_channel_os_app = log10( (sum(n_att, na.rm=T)+1) / (sum(n_ip)+1) ) )-> tb_ip_channel_os_app
+
+tr %>%
+  group_by(ip, rngNumber, channel, os, app, device) %>%
+  summarise( n_ip = sum(tr), n_att = sum(is_attributed)) %>% 
+  collect() %>%
+  ungroup() %>% 
+  group_by(rngNumber, channel, os, app, device) %>% 
+  summarise( pct_ip_channel_os_app_device = log10( (sum(n_att, na.rm=T)+1) / (sum(n_ip)+1) ) )-> tb_ip_channel_os_app_device
+
+```
+
+```{r}
+save(tb_ip_channel_device_os, tb_ip_device_os_app, tb_ip_channel_device_app, tb_ip_channel_os_app, tb_ip_channel_os_app_device, file="tr_ip_sum_4_tables.RDS")
+rm(tb_ip_channel_device_os, tb_ip_device_os_app, tb_ip_channel_device_app, tb_ip_channel_os_app, tb_ip_channel_os_app_device)
+```
+
+
+# duplicates
+
+```{r}
+
+tr %>% 
+  filter(tr==T) %>% 
+  group_by(day, ip, device, os, channel, app ) %>% 
+  mutate(rnk=1:n(), diff=click_time-lag(click_time), n_gr=sum(is_attributed), mx=n()) %>% 
+  filter(is_attributed==1) %>% 
+  mutate(mx_pos=max(rnk), mn_pos=min(rnk)) %>% 
+  collect() -> counted_df
+
+counted_df %>% 
+  filter(diff<0) %>% 
+  nrow()
+
+counted_df %>% nrow()
+
+counted_df %>% 
+  group_by(rnk) %>% 
+  summarize(nn=n()) -> dups_df
+  
+ggplot(dups_df) +
+  geom_bar(aes(x=rnk,y=nn),stat="identity") + 
+  scale_y_sqrt()
+
+```
+
+
+```{r}
+ggplot(counted_df) +
+  geom_histogram(aes(x=n_gr),binwidth = 1)
+```
+
+
+```{r}
+counted_df %>% filter(rnk>mn_pos) -> cnt_fltr_df
+ggplot(cnt_fltr_df) +
+  geom_point(aes(x=mn_pos,y=mx_pos))
+```
+
+
+```{r}
+dups_df %>% head(100)
+```
+
+
+```{r}
+# tb_ip_channel_device_os %>% sample_frac(0.0001) -> tb_ip_channel_device_os_red
+tb_ip_channel_device_os[1:100000,] -> tb_ip_channel_device_os_red
+
+ggplot(tb_ip_channel_device_os_red) + geom_point(aes(y=pct_att_ip_channel_device_os,x=diff_sd,color=n)) + scale_x_log10() 
+```
+

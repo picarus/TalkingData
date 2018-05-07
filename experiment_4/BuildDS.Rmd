@@ -1,0 +1,188 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+library(pacman)
+p_load(ggplot2) # Data visualization
+p_load(readr) # CSV file I/O, e.g. the read_csv function
+p_load(dplyr)
+#devtools::install_github("hadley/multidplyr")
+library(multidplyr)
+p_load(parallel)
+p_load(fasttime)
+p_load(xgboost)
+p_load(parallel)
+p_load(magrittr)
+p_load(caret)
+
+source("utils_BuildDS.R")
+
+```
+
+# Load Data
+
+```{r}
+load("../train.csv.RDS")
+#load("test_sup_train.Rds")
+#train %<>% mutate(id=1:n(), day=format(click_time,"%d"), hour=format(click_time,"%H") )
+#save(train, file="train.csv.RDS")
+
+train %>% head(100)
+```
+
+
+# Subsampling
+
+```{r}
+train  %>% filter(is_attributed==1) %>% nrow() -> nr_pos
+nr_pos
+```
+
+```{r}
+
+train %<>% collect()
+
+train  %>% distinct(ip, day, device, os, channel) -> all_diff_df
+all_diff_df %>% nrow()
+```
+
+Total nr of keys
+
+```{r}
+train %>% filter(is_attributed==1) %>% distinct(ip, day, device, os, channel) -> pos_diff_df
+pos_diff_df %>% nrow()-> pos_keys_nr
+pos_keys_nr
+```
+
+Positive keys
+
+```{r}
+train %>% semi_join(pos_diff_df, by=c("ip","day","device","os","channel")) -> train_pos_df
+train_pos_df %>% nrow() -> pos_records_nr
+pos_records_nr
+```
+
+Positive rows
+
+```{r}
+train %>% anti_join(pos_diff_df,by=c("ip","day","device","os","channel")) -> neg_df
+neg_df %>% nrow() -> neg_df_nr
+neg_df_nr
+```
+
+Records to choose from
+
+```{r}
+nr <- nrow(train)
+nr
+```
+
+```{r}
+neg_df_nr/pos_records_nr
+```
+
+```{r}
+ratio <- round(neg_df_nr/pos_records_nr) + 1
+ratio
+```
+
+```{r}
+N_neg <- 2*10^7
+tr_pt <- sample(neg_df_nr, size=N_neg) %>% sort()
+tr_pt %>%  head(20)
+
+neg_pt <- neg_df[tr_pt,]
+neg_pt %>% head(100)
+```
+
+```{r}
+
+pct <- neg_df_nr / N_neg
+train_pt <- rbind(neg_pt, train_pos_df)
+train_pt %<>% mutate( wghts = c( rep( pct, nrow(neg_pt)), rep( 1, nrow(train_pos_df))))
+
+```
+
+```{r}
+rm(neg_pt, neg_df, train_pos_df, pos_diff_df, all_diff_df, train, tr_pt)
+gc()
+
+```
+
+```{r}
+load("tr_sum_tables.RDS")
+```
+
+```{r}
+train_pt %<>% zero_set()
+train_pt %>% head(100)
+```
+
+```{r}
+rm(tr_hour_device_app, tr_channel_hour, tr_hour_channel_device_os, tr_hour_device_os)
+rm(tr_app, tr_hour, tr_channel, tr_os, tr_device, tr_channel_device_os, tr_device_app, tr_device_os)
+gc()
+```
+
+```{r}
+load("tr_ip_sum_tables.RDS")
+load(file="tr_ip.RDS")
+
+train_pt %>% head(100)
+
+```
+
+```{r}
+train_pt %<>% createIPRange()
+train_pt %<>% first_set()
+train_pt %>% head(100)
+```
+
+```{r}
+rm( tb_ip_app, tb_ip_channel, tb_ip_os, tb_ip_device, tb_ip, tb_rng);gc()
+```
+
+```{r}
+load("tr_ip_sum_comb_tables.RDS")
+```
+
+```{r}
+train_pt %<>% second_set()
+train_pt %>% head(100)
+```
+
+```{r}
+rm(tb_ip_app_channel, tb_ip_channel_device, tb_ip_device_os, tb_ip_device_app, tb_ip_os_app, tb_ip_os_channel)
+```
+
+```{r}
+load("tr_ip_sum_4_tables.RDS")
+```
+
+```{r}
+train_pt %<>% third_set()
+train_pt %>% head(100)
+```
+
+```{r}
+rm(tb_ip_channel_device_app, tb_ip_channel_device_os, tb_ip_channel_os_app, tb_ip_channel_os_app_device, tb_ip_device_os_app)
+gc()
+```
+
+```{r}
+train_pt %<>% adjust_set()
+train_pt %<>% addNB()
+train_pt %<>% select(-day, -id, -attributed_time)
+```
+
+
+```{r}
+VAL_TIME <- "2017-11-09 12:"
+
+train_cv <- train_pt %>% filter( click_time < VAL_TIME ) %>% select(-click_time)
+valid_cv <- train_pt %>% filter( VAL_TIME <= click_time ) %>% select(-click_time)
+#save(train_cv, valid_cv, file="training.RDS")
+rm(train_pt)
+```

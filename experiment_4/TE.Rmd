@@ -1,0 +1,114 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+library(pacman)
+p_load(ggplot2) # Data visualization
+p_load(readr) # CSV file I/O, e.g. the read_csv function
+p_load(dplyr)
+# devtools::install_github("hadley/multidplyr")
+library(multidplyr)
+p_load(parallel)
+p_load(fasttime)
+p_load(xgboost)
+p_load(mlr)
+p_load(mlrMBO)
+p_load(caret)
+p_load(magrittr)
+p_load(parallelMap)
+p_load(DiceKriging)
+p_load(rgenoud)
+
+```
+
+```{r}
+source("utils_BuildDS.R")
+```
+
+```{r}
+load("../test.csv.RDS")
+#load("xgb_model.RDS")
+#load("xgb.tune.RDS")
+```
+
+```{r}
+# test %<>% mutate(te=T)
+# 
+# load("../test_supplement.csv.RDS")
+# 
+# test_sup %<>% counts()
+# 
+# test_sup %>% semi_join(test, by=c("click_time","ip","app","os","device","channel")) -> test
+
+```
+
+```{r}
+test %<>% mutate(day=format(click_time,"%d"), hour=as.numeric(format(click_time,"%H") ))
+
+#test %<>% counts() -> train
+
+load("tr_sum_tables.RDS")
+test %<>% zero_set()
+```
+
+```{r}
+rm(tr_app, tr_channel, tr_os, tr_device, tr_channel_device_os, tr_device_app, tr_device_os)
+load("tr_ip_sum_tables.RDS")
+load("tr_ip.RDS")
+test %<>% createIPRange()
+test %<>% first_set()
+```
+
+
+```{r}
+rm(tb_rng, tb_ip, tb_ip_app, tb_ip_channel, tb_ip_os, tb_ip_device)
+load("tr_ip_sum_comb_tables.RDS")
+test %<>% second_set()
+```
+
+```{r}
+rm(tb_ip_app_channel, tb_ip_channel_device, tb_ip_device_os, tb_ip_os_app)
+load("tr_ip_sum_4_tables.RDS")
+test %<>% third_set()
+
+```
+
+```{r}
+test %<>% adjust_set()
+test %<>% addNB()
+```
+
+```{r}
+test %<>% mutate(is_attributed=factor(0))
+test %<>% select(-click_time, -day)
+
+save(test, file="testPredict.RDS")
+test %>% head(100)
+```
+
+```{r}
+#load("testPredict.RDS")
+
+testTask <- makeClassifTask(data=test , target = "is_attributed" )
+```
+
+```{r}
+# Make a new prediction
+result <- predict(xgb_model, testTask)
+prediction <- data.frame(click_id = test$click_id, is_attributed = result$data$prob.1) 
+
+write_csv(prediction, "final_prediction.csv")
+```
+
+```{r}
+prediction %>% head(100)
+```
+
+```{r}
+ggplot(prediction) +
+  geom_histogram(aes(x=is_attributed), binwidth=0.01) + scale_y_log10()
+  
+```
+

@@ -136,7 +136,7 @@ xgb <- makeLearner( "classif.xgboost",
 # [Tune-x] 3: gamma=0.148; max_depth=8; eta=0.324; min_child_weight=33; colsample_bytree=0.446; colsample_bylevel=0.895; lambda=0.181
 # 3: auc.test.mean=0.9802433; time: 112.1 min
 
-xgbSimple <- setHyperPars(xgb, par.vals = list(gamma=0.148, max_depth=8, eta=0.324, min_child_weight=33, colsample_bytree=0.446, colsample_bylevel=0.895, lambda=0.181) )
+xgbSimple <- setHyperPars(xgb, par.vals = list(gamma=0.148, max_depth=8, eta=0.724, min_child_weight=33, colsample_bytree=0.8, colsample_bylevel=0.895, lambda=0.181) )
 
 xgb_model_simple <- train(xgbSimple, trainTask)
 
